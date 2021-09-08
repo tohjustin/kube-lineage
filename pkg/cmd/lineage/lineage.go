@@ -12,8 +12,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	unstructuredv1 "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
+	"k8s.io/cli-runtime/pkg/printers"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
@@ -38,7 +40,10 @@ var (
 
 // CmdOptions contains all the options for running the lineage command.
 type CmdOptions struct {
-	ConfigFlags     *genericclioptions.ConfigFlags
+	ConfigFlags *genericclioptions.ConfigFlags
+	PrintFlags  *PrintFlags
+	ToPrinter   func(withGroup bool, withNamespace bool) (printers.ResourcePrinterFunc, error)
+
 	ClientConfig    *rest.Config
 	DynamicClient   dynamic.Interface
 	DiscoveryClient discovery.DiscoveryInterface
@@ -63,6 +68,7 @@ type Resource struct {
 func New(streams genericclioptions.IOStreams) *cobra.Command {
 	o := &CmdOptions{
 		ConfigFlags: genericclioptions.NewConfigFlags(true),
+		PrintFlags:  NewLineagePrintFlags(),
 		IOStreams:   streams,
 	}
 
@@ -81,6 +87,7 @@ func New(streams genericclioptions.IOStreams) *cobra.Command {
 	}
 
 	o.ConfigFlags.AddFlags(cmd.Flags())
+	o.PrintFlags.AddFlags(cmd)
 
 	return cmd
 }
@@ -136,6 +143,26 @@ func (o *CmdOptions) Complete(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	o.ToPrinter = func(withGroup bool, withNamespace bool) (printers.ResourcePrinterFunc, error) {
+		printFlags := o.PrintFlags.Copy()
+		if withGroup {
+			if err := printFlags.EnsureWithGroup(); err != nil {
+				return nil, err
+			}
+		}
+		if withNamespace {
+			if err := printFlags.EnsureWithNamespace(); err != nil {
+				return nil, err
+			}
+		}
+		printer, err := printFlags.ToPrinter()
+		if err != nil {
+			return nil, err
+		}
+
+		return printer.PrintObj, nil
+	}
+
 	return nil
 }
 
@@ -180,9 +207,7 @@ func (o *CmdOptions) Run() error {
 	graph := buildDependencyGraph(objects, *rootObject)
 
 	// Print table
-	// TODO: Add CLI flags for print options
-	// TODO: Hide namespace column if all printed objects are in the same namespace
-	err = printGraph(graph, rootObject.GetUID(), printOptions{WithNamespace: true})
+	err = o.printGraph(graph, rootObject.GetUID())
 	if err != nil {
 		return err
 	}
@@ -291,6 +316,32 @@ func (o *CmdOptions) getObjectsByResource(api Resource) ([]unstructuredv1.Unstru
 		}
 	}
 	return result, nil
+}
+
+func (o *CmdOptions) printGraph(objects Graph, uid types.UID) error {
+	// TODO: Auto-show group if all objects contains different resources with the same kind
+	withGroup := false
+	if o.PrintFlags.HumanReadableFlags.ShowGroup != nil {
+		withGroup = *o.PrintFlags.HumanReadableFlags.ShowGroup
+	}
+	// TODO: Auto-hide namespace column if all objects are in the same namespace
+	withNamespace := true
+	printer, err := o.ToPrinter(withGroup, withNamespace)
+	if err != nil {
+		return err
+	}
+
+	// TODO: Sort graph before printing
+	rows, err := printTableRows(objects, uid, "", withGroup)
+	if err != nil {
+		return err
+	}
+
+	table := &metav1.Table{
+		ColumnDefinitions: objectColumnDefinitions,
+		Rows:              rows,
+	}
+	return printer.PrintObj(table, o.Out)
 }
 
 func resourceFor(mapper meta.RESTMapper, resourceArg string) (schema.GroupVersionResource, error) {

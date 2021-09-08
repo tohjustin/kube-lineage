@@ -1,7 +1,6 @@
 package lineage
 
 import (
-	"bytes"
 	"fmt"
 	"strings"
 	"time"
@@ -11,7 +10,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/duration"
-	"k8s.io/cli-runtime/pkg/printers"
 	"k8s.io/client-go/util/jsonpath"
 )
 
@@ -29,13 +27,6 @@ var (
 	}
 )
 
-// printOptions defines various print options
-type printOptions struct {
-	NoHeaders     bool
-	ShowLabels    bool
-	WithNamespace bool
-}
-
 // objectColumns holds columns for all kinds of Kubernetes objects
 type objectColumns struct {
 	Name   string
@@ -44,27 +35,13 @@ type objectColumns struct {
 	Age    string
 }
 
-func printGraph(objects Graph, uid types.UID, options printOptions) error {
-	// TODO: Sort graph before printing
-	rows, err := printTableRows(objects, uid, "", options)
-	if err != nil {
-		return err
-	}
-
-	return tablePrinter(objectColumnDefinitions, rows, printers.PrintOptions{
-		NoHeaders:     options.NoHeaders,
-		WithNamespace: options.WithNamespace,
-		ShowLabels:    options.ShowLabels,
-	})
-}
-
 // TODO: Refactor this to remove duplication
-func printTableRows(objects Graph, uid types.UID, prefix string, options printOptions) ([]metav1.TableRow, error) {
+func printTableRows(objects Graph, uid types.UID, prefix string, showGroup bool) ([]metav1.TableRow, error) {
 	var rows []metav1.TableRow
 	node := objects[uid]
 
 	if len(prefix) == 0 {
-		columns := getObjectColumns(*node.Unstructured)
+		columns := getObjectColumns(*node.Unstructured, showGroup)
 		row := metav1.TableRow{
 			Object: runtime.RawExtension{
 				Object: node.DeepCopyObject(),
@@ -90,7 +67,7 @@ func printTableRows(objects Graph, uid types.UID, prefix string, options printOp
 			rowPrefix, childPrefix = prefix+"└── ", prefix+"    "
 		}
 
-		columns := getObjectColumns(*child.Unstructured)
+		columns := getObjectColumns(*child.Unstructured, showGroup)
 		row := metav1.TableRow{
 			Object: runtime.RawExtension{
 				Object: child.DeepCopyObject(),
@@ -104,7 +81,7 @@ func printTableRows(objects Graph, uid types.UID, prefix string, options printOp
 		}
 		rows = append(rows, row)
 
-		childRows, err := printTableRows(objects, childUID, childPrefix, options)
+		childRows, err := printTableRows(objects, childUID, childPrefix, showGroup)
 		if err != nil {
 			return nil, err
 		}
@@ -136,7 +113,13 @@ func getNestedString(u unstructuredv1.Unstructured, name, jsonPath string) (stri
 	return str, nil
 }
 
-func getObjectColumns(u unstructuredv1.Unstructured) *objectColumns {
+func getObjectColumns(u unstructuredv1.Unstructured, showGroup bool) *objectColumns {
+	k, gk, name := u.GetKind(), u.GroupVersionKind().GroupKind(), u.GetName()
+	if showGroup {
+		name = fmt.Sprintf("%s/%s", gk, name)
+	} else {
+		name = fmt.Sprintf("%s/%s", k, name)
+	}
 	status, _ := getNestedString(u, "condition-ready-status", "{.status.conditions[?(@.type==\"Ready\")].status}")
 	if len(status) == 0 {
 		status = cellUnset
@@ -147,7 +130,7 @@ func getObjectColumns(u unstructuredv1.Unstructured) *objectColumns {
 	}
 
 	return &objectColumns{
-		Name:   fmt.Sprintf("%s/%s", u.GetKind(), u.GetName()),
+		Name:   name,
 		Status: status,
 		Reason: reason,
 		Age:    translateTimestampSince(u.GetCreationTimestamp()),
@@ -162,20 +145,4 @@ func translateTimestampSince(timestamp metav1.Time) string {
 	}
 
 	return duration.HumanDuration(time.Since(timestamp.Time))
-}
-
-// tablePrinter prints the table using the cli-runtime TablePrinter
-func tablePrinter(columns []metav1.TableColumnDefinition, rows []metav1.TableRow, options printers.PrintOptions) error {
-	table := &metav1.Table{
-		ColumnDefinitions: columns,
-		Rows:              rows,
-	}
-	out := bytes.NewBuffer([]byte{})
-	printer := printers.NewTablePrinter(options)
-	if err := printer.PrintObj(table, out); err != nil {
-		return err
-	}
-	fmt.Printf("%s", out.String())
-
-	return nil
 }
