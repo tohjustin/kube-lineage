@@ -204,10 +204,13 @@ func (o *CmdOptions) Run() error {
 	}
 
 	// Find all dependents of the given object
-	graph := buildDependencyGraph(objects, *rootObject)
+	nodeMap, err := buildRelationshipNodeMap(objects, *rootObject)
+	if err != nil {
+		return err
+	}
 
-	// Print table
-	err = o.printGraph(graph, rootObject.GetUID())
+	// Print output
+	err = o.print(nodeMap, rootObject.GetUID())
 	if err != nil {
 		return err
 	}
@@ -318,7 +321,7 @@ func (o *CmdOptions) getObjectsByResource(api Resource) ([]unstructuredv1.Unstru
 	return result, nil
 }
 
-func (o *CmdOptions) printGraph(objects Graph, uid types.UID) error {
+func (o *CmdOptions) print(nodeMap NodeMap, uid types.UID) error {
 	// TODO: Auto-show group if all objects contains different resources with the same kind
 	withGroup := false
 	if o.PrintFlags.HumanReadableFlags.ShowGroup != nil {
@@ -331,8 +334,8 @@ func (o *CmdOptions) printGraph(objects Graph, uid types.UID) error {
 		return err
 	}
 
-	// TODO: Sort graph before printing
-	rows, err := printTableRows(objects, uid, "", withGroup)
+	// TODO: Sort dependents before printing
+	rows, err := printNodeMap(nodeMap, uid, "", withGroup)
 	if err != nil {
 		return err
 	}

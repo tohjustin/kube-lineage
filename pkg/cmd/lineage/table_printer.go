@@ -36,9 +36,9 @@ type objectColumns struct {
 }
 
 // TODO: Refactor this to remove duplication
-func printTableRows(objects Graph, uid types.UID, prefix string, showGroup bool) ([]metav1.TableRow, error) {
+func printNodeMap(nodeMap NodeMap, uid types.UID, prefix string, showGroup bool) ([]metav1.TableRow, error) {
 	var rows []metav1.TableRow
-	node := objects[uid]
+	node := nodeMap[uid]
 
 	if len(prefix) == 0 {
 		columns := getObjectColumns(*node.Unstructured, showGroup)
@@ -57,7 +57,7 @@ func printTableRows(objects Graph, uid types.UID, prefix string, showGroup bool)
 	}
 
 	for i, childUID := range node.Dependents {
-		child := objects[childUID]
+		child := nodeMap[childUID]
 
 		// Compute prefix
 		var rowPrefix, childPrefix string
@@ -81,7 +81,7 @@ func printTableRows(objects Graph, uid types.UID, prefix string, showGroup bool)
 		}
 		rows = append(rows, row)
 
-		childRows, err := printTableRows(objects, childUID, childPrefix, showGroup)
+		childRows, err := printNodeMap(nodeMap, childUID, childPrefix, showGroup)
 		if err != nil {
 			return nil, err
 		}
