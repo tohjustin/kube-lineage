@@ -234,8 +234,17 @@ func (o *CmdOptions) getAPIResources() ([]Resource, error) {
 			continue
 		}
 		for _, resource := range list.APIResources {
-			// filter resources that can be watched, listed & get
+			// Filter resources that can be watched, listed & get
 			if len(resource.Verbs) == 0 || !sets.NewString(resource.Verbs...).HasAll("watch", "list", "get") {
+				continue
+			}
+			// Exclude duplicated resources (for Kubernetes v1.18 & above)
+			switch {
+			// migrated to "events.v1.events.k8s.io"
+			case gv.Group == "" && resource.Name == "events":
+				continue
+			// migrated to "ingresses.v1.networking.k8s.io"
+			case gv.Group == "extensions" && resource.Name == "ingresses":
 				continue
 			}
 			resources = append(resources, Resource{
