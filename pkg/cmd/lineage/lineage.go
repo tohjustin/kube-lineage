@@ -322,6 +322,11 @@ func (o *CmdOptions) getObjectsByResource(api Resource) ([]unstructuredv1.Unstru
 }
 
 func (o *CmdOptions) print(nodeMap NodeMap, rootUID types.UID) error {
+	root, ok := nodeMap[rootUID]
+	if !ok {
+		return fmt.Errorf("Requested object (uid: %s) not found in list of fetched objects", rootUID)
+	}
+
 	// Setup Table Printer
 	withGroup := false
 	if o.PrintFlags.HumanReadableFlags.ShowGroup != nil {
@@ -330,7 +335,7 @@ func (o *CmdOptions) print(nodeMap NodeMap, rootUID types.UID) error {
 	// Display namespace column only if objects are in different namespaces
 	withNamespace := false
 	if o.ResourceScope != meta.RESTScopeNameNamespace {
-		rootNs := nodeMap[rootUID].GetNamespace()
+		rootNs := root.GetNamespace()
 		for _, node := range nodeMap {
 			if rootNs != node.GetNamespace() {
 				withNamespace = true
@@ -344,7 +349,7 @@ func (o *CmdOptions) print(nodeMap NodeMap, rootUID types.UID) error {
 	}
 
 	// Generate Table Rows for printing
-	rows, err := printNodeMap(nodeMap, rootUID, "", withGroup)
+	rows, err := printNode(nodeMap, root, withGroup)
 	if err != nil {
 		return err
 	}

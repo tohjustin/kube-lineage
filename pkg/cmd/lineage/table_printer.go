@@ -8,7 +8,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	unstructuredv1 "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/duration"
 	"k8s.io/client-go/util/jsonpath"
 )
@@ -18,32 +17,17 @@ const (
 	cellUnset   = "<none>"
 )
 
-var (
-	objectColumnDefinitions = []metav1.TableColumnDefinition{
-		{Name: "Name", Type: "string", Format: "name", Description: metav1.ObjectMeta{}.SwaggerDoc()["name"]},
-		{Name: "Status", Type: "string", Description: "The condition Ready status of the object."},
-		{Name: "Reason", Type: "string", Description: "The condition Ready reason of the object."},
-		{Name: "Age", Type: "string", Description: metav1.ObjectMeta{}.SwaggerDoc()["creationTimestamp"]},
-	}
-)
-
-// objectColumns holds columns for all kinds of Kubernetes objects
-type objectColumns struct {
-	Name   string
-	Status string
-	Reason string
-	Age    string
+// objectColumnDefinitions holds table column definition for Kubernetes objects.
+var objectColumnDefinitions = []metav1.TableColumnDefinition{
+	{Name: "Name", Type: "string", Format: "name", Description: metav1.ObjectMeta{}.SwaggerDoc()["name"]},
+	{Name: "Status", Type: "string", Description: "The condition Ready status of the object."},
+	{Name: "Reason", Type: "string", Description: "The condition Ready reason of the object."},
+	{Name: "Age", Type: "string", Description: metav1.ObjectMeta{}.SwaggerDoc()["creationTimestamp"]},
 }
 
-// TODO: Sort dependents before printing
-// TODO: Refactor this to remove duplication
-func printNodeMap(nodeMap NodeMap, uid types.UID, prefix string, showGroup bool) ([]metav1.TableRow, error) {
+// printNode converts the given node & its dependents into table rows.
+func printNode(nodeMap NodeMap, root *Node, withGroup bool) ([]metav1.TableRow, error) {
 	// Track every object kind in the node map & the groups that they belong to.
-	// When printing an object & if there exists another object in the node map
-	// that has the same kind but belongs to a different group (eg. "services.v1"
-	// vs "services.v1.serving.knative.dev"), we prepend the object's name with
-	// its GroupKind instead of its Kind to clearly indicate which resource type
-	// it belongs to.
 	kindToGroupSetMap := map[string](map[string]struct{}){}
 	for _, node := range nodeMap {
 		gvk := node.GroupVersionKind()
@@ -52,63 +36,87 @@ func printNodeMap(nodeMap NodeMap, uid types.UID, prefix string, showGroup bool)
 		}
 		kindToGroupSetMap[gvk.Kind][gvk.Group] = struct{}{}
 	}
-
-	var rows []metav1.TableRow
-	node := nodeMap[uid]
-
-	if len(prefix) == 0 {
-		showGroup := len(kindToGroupSetMap[node.GroupVersionKind().Kind]) > 1 || showGroup
-		columns := getObjectColumns(*node.Unstructured, showGroup)
-		row := metav1.TableRow{
-			Object: runtime.RawExtension{
-				Object: node.DeepCopyObject(),
-			},
-			Cells: []interface{}{
-				columns.Name,
-				columns.Status,
-				columns.Reason,
-				columns.Age,
-			},
-		}
-		rows = append(rows, row)
+	// When printing an object & if there exists another object in the node map
+	// that has the same kind but belongs to a different group (eg. "services.v1"
+	// vs "services.v1.serving.knative.dev"), we prepend the object's name with
+	// its GroupKind instead of its Kind to clearly indicate which resource type
+	// it belongs to.
+	showGroupFn := func(kind string) bool {
+		return len(kindToGroupSetMap[kind]) > 1 || withGroup
 	}
 
-	for i, childUID := range node.Dependents {
-		child := nodeMap[childUID]
+	// TODO: Sort dependents before printing
+	var rows []metav1.TableRow
+	row := nodeToTableRow(root, "", showGroupFn)
+	dependentRows, err := printNodeDependents(nodeMap, root, "", showGroupFn)
+	if err != nil {
+		return nil, err
+	}
+	rows = append(rows, row)
+	rows = append(rows, dependentRows...)
 
-		// Compute prefix
-		var rowPrefix, childPrefix string
-		if i != len(node.Dependents)-1 {
-			rowPrefix, childPrefix = prefix+"├── ", prefix+"│   "
+	return rows, nil
+}
+
+// printNodeDependents converts the given node's dependents into table rows.
+func printNodeDependents(nodeMap NodeMap, node *Node, prefix string, showGroupFn func(kind string) bool) ([]metav1.TableRow, error) {
+	var rows []metav1.TableRow
+	lastIx := len(node.Dependents) - 1
+	for ix, childUID := range node.Dependents {
+		var childPrefix, dependentPrefix string
+		if ix != lastIx {
+			childPrefix, dependentPrefix = prefix+"├── ", prefix+"│   "
 		} else {
-			rowPrefix, childPrefix = prefix+"└── ", prefix+"    "
+			childPrefix, dependentPrefix = prefix+"└── ", prefix+"    "
 		}
 
-		showGroup := len(kindToGroupSetMap[child.GroupVersionKind().Kind]) > 1 || showGroup
-		columns := getObjectColumns(*child.Unstructured, showGroup)
-		row := metav1.TableRow{
-			Object: runtime.RawExtension{
-				Object: child.DeepCopyObject(),
-			},
-			Cells: []interface{}{
-				rowPrefix + columns.Name,
-				columns.Status,
-				columns.Reason,
-				columns.Age,
-			},
+		child, ok := nodeMap[childUID]
+		if !ok {
+			return nil, fmt.Errorf("Dependent object (uid: %s) not found in list of fetched objects", childUID)
 		}
-		rows = append(rows, row)
-
-		childRows, err := printNodeMap(nodeMap, childUID, childPrefix, showGroup)
+		row := nodeToTableRow(child, childPrefix, showGroupFn)
+		dependentRows, err := printNodeDependents(nodeMap, child, dependentPrefix, showGroupFn)
 		if err != nil {
 			return nil, err
 		}
-		rows = append(rows, childRows...)
+		rows = append(rows, row)
+		rows = append(rows, dependentRows...)
 	}
 
 	return rows, nil
 }
 
+// nodeToTableRow converts the given node into a table row.
+func nodeToTableRow(node *Node, namePrefix string, showGroupFn func(kind string) bool) metav1.TableRow {
+	kind, name := node.GetKind(), node.GetName()
+	if showGroupFn(kind) {
+		name = fmt.Sprintf("%s%s/%s", namePrefix, node.GroupVersionKind().GroupKind(), name)
+	} else {
+		name = fmt.Sprintf("%s%s/%s", namePrefix, kind, name)
+	}
+	status, _ := getNestedString(*node.Unstructured, "status", "{.status.conditions[?(@.type==\"Ready\")].status}")
+	if len(status) == 0 {
+		status = cellUnset
+	}
+	reason, _ := getNestedString(*node.Unstructured, "reason", "{.status.conditions[?(@.type==\"Ready\")].reason}")
+	if len(reason) == 0 {
+		reason = cellUnset
+	}
+	age := translateTimestampSince(node.GetCreationTimestamp())
+
+	return metav1.TableRow{
+		Object: runtime.RawExtension{Object: node.DeepCopyObject()},
+		Cells: []interface{}{
+			name,
+			status,
+			reason,
+			age,
+		},
+	}
+}
+
+// getNestedString returns the field value of a Kubernetes object at the given
+// JSON path.
 func getNestedString(u unstructuredv1.Unstructured, name, jsonPath string) (string, error) {
 	jp := jsonpath.New(name).AllowMissingKeys(true)
 	if err := jp.Parse(jsonPath); err != nil {
@@ -129,30 +137,6 @@ func getNestedString(u unstructuredv1.Unstructured, name, jsonPath string) (stri
 	str := strings.Join(strValues, ",")
 
 	return str, nil
-}
-
-func getObjectColumns(u unstructuredv1.Unstructured, showGroup bool) *objectColumns {
-	k, gk, name := u.GetKind(), u.GroupVersionKind().GroupKind(), u.GetName()
-	if showGroup {
-		name = fmt.Sprintf("%s/%s", gk, name)
-	} else {
-		name = fmt.Sprintf("%s/%s", k, name)
-	}
-	status, _ := getNestedString(u, "condition-ready-status", "{.status.conditions[?(@.type==\"Ready\")].status}")
-	if len(status) == 0 {
-		status = cellUnset
-	}
-	reason, _ := getNestedString(u, "condition-ready-reason", "{.status.conditions[?(@.type==\"Ready\")].reason}")
-	if len(reason) == 0 {
-		reason = cellUnset
-	}
-
-	return &objectColumns{
-		Name:   name,
-		Status: status,
-		Reason: reason,
-		Age:    translateTimestampSince(u.GetCreationTimestamp()),
-	}
 }
 
 // translateTimestampSince returns the elapsed time since timestamp in
