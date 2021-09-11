@@ -322,7 +322,6 @@ func (o *CmdOptions) getObjectsByResource(api Resource) ([]unstructuredv1.Unstru
 }
 
 func (o *CmdOptions) print(nodeMap NodeMap, rootUID types.UID) error {
-	// TODO: Auto-show group if all objects contains different resources with the same kind
 	// Setup Table Printer
 	withGroup := false
 	if o.PrintFlags.HumanReadableFlags.ShowGroup != nil {

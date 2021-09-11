@@ -38,10 +38,26 @@ type objectColumns struct {
 // TODO: Sort dependents before printing
 // TODO: Refactor this to remove duplication
 func printNodeMap(nodeMap NodeMap, uid types.UID, prefix string, showGroup bool) ([]metav1.TableRow, error) {
+	// Track every object kind in the node map & the groups that they belong to.
+	// When printing an object & if there exists another object in the node map
+	// that has the same kind but belongs to a different group (eg. "services.v1"
+	// vs "services.v1.serving.knative.dev"), we prepend the object's name with
+	// its GroupKind instead of its Kind to clearly indicate which resource type
+	// it belongs to.
+	kindToGroupSetMap := map[string](map[string]struct{}){}
+	for _, node := range nodeMap {
+		gvk := node.GroupVersionKind()
+		if _, ok := kindToGroupSetMap[gvk.Kind]; !ok {
+			kindToGroupSetMap[gvk.Kind] = map[string]struct{}{}
+		}
+		kindToGroupSetMap[gvk.Kind][gvk.Group] = struct{}{}
+	}
+
 	var rows []metav1.TableRow
 	node := nodeMap[uid]
 
 	if len(prefix) == 0 {
+		showGroup := len(kindToGroupSetMap[node.GroupVersionKind().Kind]) > 1 || showGroup
 		columns := getObjectColumns(*node.Unstructured, showGroup)
 		row := metav1.TableRow{
 			Object: runtime.RawExtension{
@@ -68,6 +84,7 @@ func printNodeMap(nodeMap NodeMap, uid types.UID, prefix string, showGroup bool)
 			rowPrefix, childPrefix = prefix+"└── ", prefix+"    "
 		}
 
+		showGroup := len(kindToGroupSetMap[child.GroupVersionKind().Kind]) > 1 || showGroup
 		columns := getObjectColumns(*child.Unstructured, showGroup)
 		row := metav1.TableRow{
 			Object: runtime.RawExtension{
