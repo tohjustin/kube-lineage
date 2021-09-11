@@ -103,7 +103,8 @@ func printNode(nodeMap NodeMap, root *Node, withGroup bool) ([]metav1.TableRow, 
 
 	var rows []metav1.TableRow
 	row := nodeToTableRow(root, "", showGroupFn)
-	dependentRows, err := printNodeDependents(nodeMap, root, "", sortUIDsFn, showGroupFn)
+	uidSet := map[types.UID]struct{}{}
+	dependentRows, err := printNodeDependents(nodeMap, uidSet, root, "", sortUIDsFn, showGroupFn)
 	if err != nil {
 		return nil, err
 	}
@@ -114,10 +115,22 @@ func printNode(nodeMap NodeMap, root *Node, withGroup bool) ([]metav1.TableRow, 
 }
 
 // printNodeDependents converts the given node's dependents into table rows.
-func printNodeDependents(nodeMap NodeMap, node *Node, prefix string,
+func printNodeDependents(
+	nodeMap NodeMap,
+	uidSet map[types.UID]struct{},
+	node *Node,
+	prefix string,
 	sortUIDsFn func(uids []types.UID) []types.UID,
 	showGroupFn func(kind string) bool) ([]metav1.TableRow, error) {
 	var rows []metav1.TableRow
+
+	// Guard against possible cyclic dependency
+	if _, ok := uidSet[node.UID]; ok {
+		return rows, nil
+	} else {
+		uidSet[node.UID] = struct{}{}
+	}
+
 	dependents := sortUIDsFn(node.Dependents)
 	lastIx := len(dependents) - 1
 	for ix, childUID := range dependents {
@@ -133,7 +146,7 @@ func printNodeDependents(nodeMap NodeMap, node *Node, prefix string,
 			return nil, fmt.Errorf("Dependent object (uid: %s) not found in list of fetched objects", childUID)
 		}
 		row := nodeToTableRow(child, childPrefix, showGroupFn)
-		dependentRows, err := printNodeDependents(nodeMap, child, dependentPrefix, sortUIDsFn, showGroupFn)
+		dependentRows, err := printNodeDependents(nodeMap, uidSet, child, dependentPrefix, sortUIDsFn, showGroupFn)
 		if err != nil {
 			return nil, err
 		}
