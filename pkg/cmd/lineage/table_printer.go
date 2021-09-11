@@ -2,12 +2,14 @@ package lineage
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	unstructuredv1 "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/duration"
 	"k8s.io/client-go/util/jsonpath"
 )
@@ -24,6 +26,29 @@ var objectColumnDefinitions = []metav1.TableColumnDefinition{
 	{Name: "Reason", Type: "string", Description: "The condition Ready reason of the object."},
 	{Name: "Age", Type: "string", Description: metav1.ObjectMeta{}.SwaggerDoc()["creationTimestamp"]},
 }
+
+type NodeList []*Node
+
+func (n NodeList) Len() int { return len(n) }
+
+func (n NodeList) Less(i, j int) bool {
+	// Sort nodes in following order: Namespace, Kind, Group, Name
+	a, b := n[i], n[j]
+	nsA, nsB := a.GetNamespace(), b.GetNamespace()
+	if nsA != nsB {
+		return nsA < nsB
+	}
+	gvkA, gvkB := a.GroupVersionKind(), b.GroupVersionKind()
+	if gvkA.Kind != gvkB.Kind {
+		return gvkA.Kind < gvkB.Kind
+	}
+	if gvkA.Group != gvkB.Group {
+		return gvkA.Group < gvkB.Group
+	}
+	return a.GetName() < b.GetName()
+}
+
+func (n NodeList) Swap(i, j int) { n[i], n[j] = n[j], n[i] }
 
 // printNode converts the given node & its dependents into table rows.
 func printNode(nodeMap NodeMap, root *Node, withGroup bool) ([]metav1.TableRow, error) {
@@ -44,11 +69,24 @@ func printNode(nodeMap NodeMap, root *Node, withGroup bool) ([]metav1.TableRow, 
 	showGroupFn := func(kind string) bool {
 		return len(kindToGroupSetMap[kind]) > 1 || withGroup
 	}
+	// Sorts the list of UIDs based on the underlying object in following order:
+	// Namespace, Kind, Group, Name
+	sortUIDsFn := func(uids []types.UID) []types.UID {
+		nodes := make(NodeList, len(uids))
+		for ix, uid := range uids {
+			nodes[ix] = nodeMap[uid]
+		}
+		sort.Sort(nodes)
+		sortedUIDs := make([]types.UID, len(uids))
+		for ix, node := range nodes {
+			sortedUIDs[ix] = node.UID
+		}
+		return sortedUIDs
+	}
 
-	// TODO: Sort dependents before printing
 	var rows []metav1.TableRow
 	row := nodeToTableRow(root, "", showGroupFn)
-	dependentRows, err := printNodeDependents(nodeMap, root, "", showGroupFn)
+	dependentRows, err := printNodeDependents(nodeMap, root, "", sortUIDsFn, showGroupFn)
 	if err != nil {
 		return nil, err
 	}
@@ -59,10 +97,13 @@ func printNode(nodeMap NodeMap, root *Node, withGroup bool) ([]metav1.TableRow, 
 }
 
 // printNodeDependents converts the given node's dependents into table rows.
-func printNodeDependents(nodeMap NodeMap, node *Node, prefix string, showGroupFn func(kind string) bool) ([]metav1.TableRow, error) {
+func printNodeDependents(nodeMap NodeMap, node *Node, prefix string,
+	sortUIDsFn func(uids []types.UID) []types.UID,
+	showGroupFn func(kind string) bool) ([]metav1.TableRow, error) {
 	var rows []metav1.TableRow
-	lastIx := len(node.Dependents) - 1
-	for ix, childUID := range node.Dependents {
+	dependents := sortUIDsFn(node.Dependents)
+	lastIx := len(dependents) - 1
+	for ix, childUID := range dependents {
 		var childPrefix, dependentPrefix string
 		if ix != lastIx {
 			childPrefix, dependentPrefix = prefix+"├── ", prefix+"│   "
@@ -75,7 +116,7 @@ func printNodeDependents(nodeMap NodeMap, node *Node, prefix string, showGroupFn
 			return nil, fmt.Errorf("Dependent object (uid: %s) not found in list of fetched objects", childUID)
 		}
 		row := nodeToTableRow(child, childPrefix, showGroupFn)
-		dependentRows, err := printNodeDependents(nodeMap, child, dependentPrefix, showGroupFn)
+		dependentRows, err := printNodeDependents(nodeMap, child, dependentPrefix, sortUIDsFn, showGroupFn)
 		if err != nil {
 			return nil, err
 		}
