@@ -335,9 +335,8 @@ func (o *CmdOptions) print(nodeMap NodeMap, rootUID types.UID) error {
 	// Display namespace column only if objects are in different namespaces
 	withNamespace := false
 	if o.ResourceScope != meta.RESTScopeNameNamespace {
-		rootNs := root.GetNamespace()
 		for _, node := range nodeMap {
-			if rootNs != node.GetNamespace() {
+			if root.Namespace != node.Namespace {
 				withNamespace = true
 				break
 			}

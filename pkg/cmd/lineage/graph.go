@@ -10,25 +10,25 @@ type NodeMap map[types.UID]*Node
 
 type Node struct {
 	*unstructuredv1.Unstructured
-	Dependents      []types.UID
-	OwnerReferences []metav1.OwnerReference
 	UID             types.UID
-}
-
-func newNode(u unstructuredv1.Unstructured) *Node {
-	return &Node{
-		Unstructured:    &u,
-		UID:             u.GetUID(),
-		OwnerReferences: u.GetOwnerReferences(),
-	}
+	Name            string
+	Namespace       string
+	Group           string
+	Kind            string
+	OwnerReferences []metav1.OwnerReference
+	Dependents      []types.UID
 }
 
 func buildRelationshipNodeMap(objects []unstructuredv1.Unstructured, root unstructuredv1.Unstructured) (NodeMap, error) {
 	// Create global node map of all objects
 	globalMap := NodeMap{}
-	for _, o := range objects {
-		node := newNode(o)
-		globalMap[node.UID] = node
+	for ix, o := range objects {
+		node := Node{
+			Unstructured:    &objects[ix],
+			UID:             o.GetUID(),
+			OwnerReferences: o.GetOwnerReferences(),
+		}
+		globalMap[node.UID] = &node
 	}
 
 	// Populate dependents for every node
@@ -53,6 +53,15 @@ func buildRelationshipNodeMap(objects []unstructuredv1.Unstructured, root unstru
 		for _, dUID := range nodeMap[uid].Dependents {
 			nodeMap[dUID] = globalMap[dUID]
 		}
+	}
+
+	// Populate field data for submap nodes
+	for _, o := range nodeMap {
+		gvk := o.GroupVersionKind()
+		o.Group = gvk.Group
+		o.Kind = gvk.Kind
+		o.Name = o.GetName()
+		o.Namespace = o.GetNamespace()
 	}
 
 	return nodeMap, nil

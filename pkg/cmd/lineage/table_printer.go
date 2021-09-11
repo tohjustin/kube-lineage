@@ -34,18 +34,16 @@ func (n NodeList) Len() int { return len(n) }
 func (n NodeList) Less(i, j int) bool {
 	// Sort nodes in following order: Namespace, Kind, Group, Name
 	a, b := n[i], n[j]
-	nsA, nsB := a.GetNamespace(), b.GetNamespace()
-	if nsA != nsB {
-		return nsA < nsB
+	if a.Namespace != b.Namespace {
+		return a.Namespace < b.Namespace
 	}
-	gvkA, gvkB := a.GroupVersionKind(), b.GroupVersionKind()
-	if gvkA.Kind != gvkB.Kind {
-		return gvkA.Kind < gvkB.Kind
+	if a.Kind != b.Kind {
+		return a.Kind < b.Kind
 	}
-	if gvkA.Group != gvkB.Group {
-		return gvkA.Group < gvkB.Group
+	if a.Group != b.Group {
+		return a.Group < b.Group
 	}
-	return a.GetName() < b.GetName()
+	return a.Name < b.Name
 }
 
 func (n NodeList) Swap(i, j int) { n[i], n[j] = n[j], n[i] }
@@ -55,11 +53,10 @@ func printNode(nodeMap NodeMap, root *Node, withGroup bool) ([]metav1.TableRow, 
 	// Track every object kind in the node map & the groups that they belong to.
 	kindToGroupSetMap := map[string](map[string]struct{}){}
 	for _, node := range nodeMap {
-		gvk := node.GroupVersionKind()
-		if _, ok := kindToGroupSetMap[gvk.Kind]; !ok {
-			kindToGroupSetMap[gvk.Kind] = map[string]struct{}{}
+		if _, ok := kindToGroupSetMap[node.Kind]; !ok {
+			kindToGroupSetMap[node.Kind] = map[string]struct{}{}
 		}
-		kindToGroupSetMap[gvk.Kind][gvk.Group] = struct{}{}
+		kindToGroupSetMap[node.Kind][node.Group] = struct{}{}
 	}
 	// When printing an object & if there exists another object in the node map
 	// that has the same kind but belongs to a different group (eg. "services.v1"
@@ -129,11 +126,11 @@ func printNodeDependents(nodeMap NodeMap, node *Node, prefix string,
 
 // nodeToTableRow converts the given node into a table row.
 func nodeToTableRow(node *Node, namePrefix string, showGroupFn func(kind string) bool) metav1.TableRow {
-	kind, name := node.GetKind(), node.GetName()
-	if showGroupFn(kind) {
-		name = fmt.Sprintf("%s%s/%s", namePrefix, node.GroupVersionKind().GroupKind(), name)
+	var name string
+	if showGroupFn(node.Kind) && len(node.Group) > 0 {
+		name = fmt.Sprintf("%s%s.%s/%s", namePrefix, node.Kind, node.Group, node.Name)
 	} else {
-		name = fmt.Sprintf("%s%s/%s", namePrefix, kind, name)
+		name = fmt.Sprintf("%s%s/%s", namePrefix, node.Kind, node.Name)
 	}
 	status, _ := getNestedString(*node.Unstructured, "status", "{.status.conditions[?(@.type==\"Ready\")].status}")
 	if len(status) == 0 {
