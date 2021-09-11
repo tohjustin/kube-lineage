@@ -19,13 +19,19 @@ const (
 	cellUnset   = "<none>"
 )
 
-// objectColumnDefinitions holds table column definition for Kubernetes objects.
-var objectColumnDefinitions = []metav1.TableColumnDefinition{
-	{Name: "Name", Type: "string", Format: "name", Description: metav1.ObjectMeta{}.SwaggerDoc()["name"]},
-	{Name: "Status", Type: "string", Description: "The condition Ready status of the object."},
-	{Name: "Reason", Type: "string", Description: "The condition Ready reason of the object."},
-	{Name: "Age", Type: "string", Description: metav1.ObjectMeta{}.SwaggerDoc()["creationTimestamp"]},
-}
+var (
+	// objectColumnDefinitions holds table column definition for Kubernetes objects.
+	objectColumnDefinitions = []metav1.TableColumnDefinition{
+		{Name: "Name", Type: "string", Format: "name", Description: metav1.ObjectMeta{}.SwaggerDoc()["name"]},
+		{Name: "Status", Type: "string", Description: "The condition Ready status of the object."},
+		{Name: "Reason", Type: "string", Description: "The condition Ready reason of the object."},
+		{Name: "Age", Type: "string", Description: metav1.ObjectMeta{}.SwaggerDoc()["creationTimestamp"]},
+	}
+	// objectReasonJSONPath is the JSON path to get a Kubernetes object's "Ready" condition-type status
+	objectReasonJSONPath *jsonpath.JSONPath
+	// objectStatusJSONPath is the JSON path to get a Kubernetes object's "Ready" condition-type reason
+	objectStatusJSONPath *jsonpath.JSONPath
+)
 
 type NodeList []*Node
 
@@ -47,6 +53,20 @@ func (n NodeList) Less(i, j int) bool {
 }
 
 func (n NodeList) Swap(i, j int) { n[i], n[j] = n[j], n[i] }
+
+func init() {
+	var err error
+	objectReasonJSONPath, err = newJSONPath("status", "{.status.conditions[?(@.type==\"Ready\")].reason}")
+	if err != nil {
+		err = fmt.Errorf("failed to initialize object reason JSON path: %w", err)
+		panic(err)
+	}
+	objectStatusJSONPath, err = newJSONPath("status", "{.status.conditions[?(@.type==\"Ready\")].status}")
+	if err != nil {
+		err = fmt.Errorf("failed to initialize object status JSON path: %w", err)
+		panic(err)
+	}
+}
 
 // printNode converts the given node & its dependents into table rows.
 func printNode(nodeMap NodeMap, root *Node, withGroup bool) ([]metav1.TableRow, error) {
@@ -132,11 +152,11 @@ func nodeToTableRow(node *Node, namePrefix string, showGroupFn func(kind string)
 	} else {
 		name = fmt.Sprintf("%s%s/%s", namePrefix, node.Kind, node.Name)
 	}
-	status, _ := getNestedString(*node.Unstructured, "status", "{.status.conditions[?(@.type==\"Ready\")].status}")
+	status, _ := getNestedString(*node.Unstructured, objectStatusJSONPath)
 	if len(status) == 0 {
 		status = cellUnset
 	}
-	reason, _ := getNestedString(*node.Unstructured, "reason", "{.status.conditions[?(@.type==\"Ready\")].reason}")
+	reason, _ := getNestedString(*node.Unstructured, objectReasonJSONPath)
 	if len(reason) == 0 {
 		reason = cellUnset
 	}
@@ -153,14 +173,19 @@ func nodeToTableRow(node *Node, namePrefix string, showGroupFn func(kind string)
 	}
 }
 
-// getNestedString returns the field value of a Kubernetes object at the given
-// JSON path.
-func getNestedString(u unstructuredv1.Unstructured, name, jsonPath string) (string, error) {
+// newJSONPath returns a JSONPath object created from parsing the given JSON
+// path string.
+func newJSONPath(name, jsonPath string) (*jsonpath.JSONPath, error) {
 	jp := jsonpath.New(name).AllowMissingKeys(true)
 	if err := jp.Parse(jsonPath); err != nil {
-		return "", err
+		return nil, err
 	}
+	return jp, nil
+}
 
+// getNestedString returns the field value of a Kubernetes object at the given
+// JSON path.
+func getNestedString(u unstructuredv1.Unstructured, jp *jsonpath.JSONPath) (string, error) {
 	data := u.UnstructuredContent()
 	values, err := jp.FindResults(data)
 	if err != nil {
