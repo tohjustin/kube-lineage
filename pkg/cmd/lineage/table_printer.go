@@ -35,6 +35,7 @@ type objectColumns struct {
 	Age    string
 }
 
+// TODO: Sort dependents before printing
 // TODO: Refactor this to remove duplication
 func printNodeMap(nodeMap NodeMap, uid types.UID, prefix string, showGroup bool) ([]metav1.TableRow, error) {
 	var rows []metav1.TableRow

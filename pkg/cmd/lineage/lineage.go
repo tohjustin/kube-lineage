@@ -321,30 +321,43 @@ func (o *CmdOptions) getObjectsByResource(api Resource) ([]unstructuredv1.Unstru
 	return result, nil
 }
 
-func (o *CmdOptions) print(nodeMap NodeMap, uid types.UID) error {
+func (o *CmdOptions) print(nodeMap NodeMap, rootUID types.UID) error {
 	// TODO: Auto-show group if all objects contains different resources with the same kind
+	// Setup Table Printer
 	withGroup := false
 	if o.PrintFlags.HumanReadableFlags.ShowGroup != nil {
 		withGroup = *o.PrintFlags.HumanReadableFlags.ShowGroup
 	}
-	// TODO: Auto-hide namespace column if all objects are in the same namespace
-	withNamespace := true
+	// Display namespace column only if objects are in different namespaces
+	withNamespace := false
+	if o.ResourceScope != meta.RESTScopeNameNamespace {
+		rootNs := nodeMap[rootUID].GetNamespace()
+		for _, node := range nodeMap {
+			if rootNs != node.GetNamespace() {
+				withNamespace = true
+				break
+			}
+		}
+	}
 	printer, err := o.ToPrinter(withGroup, withNamespace)
 	if err != nil {
 		return err
 	}
 
-	// TODO: Sort dependents before printing
-	rows, err := printNodeMap(nodeMap, uid, "", withGroup)
+	// Generate Table Rows for printing
+	rows, err := printNodeMap(nodeMap, rootUID, "", withGroup)
 	if err != nil {
 		return err
 	}
-
 	table := &metav1.Table{
 		ColumnDefinitions: objectColumnDefinitions,
 		Rows:              rows,
 	}
-	return printer.PrintObj(table, o.Out)
+	if err = printer.PrintObj(table, o.Out); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func resourceFor(mapper meta.RESTMapper, resourceArg string) (schema.GroupVersionResource, error) {
