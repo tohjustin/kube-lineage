@@ -29,7 +29,7 @@ func (f *HumanPrintFlags) EnsureWithNamespace() error {
 	return nil
 }
 
-// AllowedFormats returns more customized formating options
+// AllowedFormats returns more customized formating options.
 func (f *HumanPrintFlags) AllowedFormats() []string {
 	return []string{"wide"}
 }
@@ -58,7 +58,7 @@ func (f *HumanPrintFlags) ToPrinter(outputFormat string) (printers.ResourcePrint
 }
 
 // AddFlags receives a *cobra.Command reference and binds flags related to
-// human-readable printing to it
+// human-readable printing to it.
 func (f *HumanPrintFlags) AddFlags(c *cobra.Command) {
 	if f.NoHeaders != nil {
 		c.Flags().BoolVar(f.NoHeaders, "no-headers", *f.NoHeaders, "When using the default output format, don't print headers (default print headers).")

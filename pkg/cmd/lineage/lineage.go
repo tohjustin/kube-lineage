@@ -58,7 +58,7 @@ type CmdOptions struct {
 	genericclioptions.IOStreams
 }
 
-// Resource contains the GroupVersionResource and APIResource for a resource
+// Resource contains the GroupVersionResource and APIResource for a resource.
 type Resource struct {
 	// GroupVersionResource unambiguously identifies a resource.
 	APIGroupVersionResource schema.GroupVersionResource
@@ -211,7 +211,7 @@ func (o *CmdOptions) Run() error {
 	objects = append(objects, *rootObject)
 
 	// Find all dependents of the root object
-	nodeMap, err := buildRelationshipNodeMap(objects, rootUID)
+	nodeMap, err := resolveDependents(objects, rootUID)
 	if err != nil {
 		return err
 	}
@@ -225,6 +225,8 @@ func (o *CmdOptions) Run() error {
 	return nil
 }
 
+// getAPIResources fetches & returns all API resources that exists on the
+// cluster.
 func (o *CmdOptions) getAPIResources() ([]Resource, error) {
 	lists, err := o.DiscoveryClient.ServerPreferredResources()
 	if err != nil {
@@ -268,6 +270,8 @@ func (o *CmdOptions) getAPIResources() ([]Resource, error) {
 	return resources, nil
 }
 
+// getObjectsByResources fetches & returns all objects of the provided list of
+// resources.
 func (o *CmdOptions) getObjectsByResources(apis []Resource) ([]unstructuredv1.Unstructured, error) {
 	var mu sync.Mutex
 	var wg sync.WaitGroup
@@ -306,6 +310,7 @@ func (o *CmdOptions) getObjectsByResources(apis []Resource) ([]unstructuredv1.Un
 	return result, errResult.ErrorOrNil()
 }
 
+// getObjectsByResource fetches & returns all objects of the provided resource.
 func (o *CmdOptions) getObjectsByResource(api Resource) ([]unstructuredv1.Unstructured, error) {
 	gvr := api.APIGroupVersionResource
 	resourceScope := o.ResourceScope
@@ -359,6 +364,7 @@ list_objects:
 	return result, nil
 }
 
+// print outputs the root object & its dependents in table format.
 func (o *CmdOptions) print(nodeMap NodeMap, rootUID types.UID) error {
 	root, ok := nodeMap[rootUID]
 	if !ok {
@@ -401,6 +407,8 @@ func (o *CmdOptions) print(nodeMap NodeMap, rootUID types.UID) error {
 	return nil
 }
 
+// resourceFor returns the GroupVersionResource that matches provided resource
+// argument string.
 func resourceFor(mapper meta.RESTMapper, resourceArg string) (schema.GroupVersionResource, error) {
 	fullySpecifiedGVR, Resource := schema.ParseResourceArg(strings.ToLower(resourceArg))
 	gvr := schema.GroupVersionResource{}
@@ -423,6 +431,7 @@ func resourceFor(mapper meta.RESTMapper, resourceArg string) (schema.GroupVersio
 	return gvr, nil
 }
 
+// resourceScopeFor returns the scope of the provided GroupVersionResource.
 func resourceScopeFor(mapper meta.RESTMapper, gvr schema.GroupVersionResource) (meta.RESTScopeName, error) {
 	ret := meta.RESTScopeNameNamespace
 	gk, err := mapper.KindFor(gvr)

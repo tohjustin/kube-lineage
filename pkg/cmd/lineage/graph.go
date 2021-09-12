@@ -6,8 +6,11 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
+// NodeMap represents an owner-dependent relationship tree stored as flat list
+// of nodes.
 type NodeMap map[types.UID]*Node
 
+// Node represents a Kubernetes object.
 type Node struct {
 	*unstructuredv1.Unstructured
 	UID             types.UID
@@ -19,7 +22,9 @@ type Node struct {
 	Dependents      []types.UID
 }
 
-func buildRelationshipNodeMap(objects []unstructuredv1.Unstructured, rootUID types.UID) (NodeMap, error) {
+// resolveDependents resolves all dependents of the provided root object and
+// returns an owner-dependent relationship tree.
+func resolveDependents(objects []unstructuredv1.Unstructured, rootUID types.UID) (NodeMap, error) {
 	// Create global node map of all objects
 	globalMap := NodeMap{}
 	for ix, o := range objects {

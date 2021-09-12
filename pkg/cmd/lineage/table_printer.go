@@ -27,9 +27,11 @@ var (
 		{Name: "Reason", Type: "string", Description: "The condition Ready reason of the object."},
 		{Name: "Age", Type: "string", Description: metav1.ObjectMeta{}.SwaggerDoc()["creationTimestamp"]},
 	}
-	// objectReasonJSONPath is the JSON path to get a Kubernetes object's "Ready" condition-type status
+	// objectReasonJSONPath is the JSON path to get a Kubernetes object's "Ready"
+	// condition-type status.
 	objectReasonJSONPath *jsonpath.JSONPath
-	// objectStatusJSONPath is the JSON path to get a Kubernetes object's "Ready" condition-type reason
+	// objectStatusJSONPath is the JSON path to get a Kubernetes object's "Ready"
+	// condition-type reason.
 	objectStatusJSONPath *jsonpath.JSONPath
 )
 
@@ -68,7 +70,7 @@ func init() {
 	}
 }
 
-// printNode converts the given node & its dependents into table rows.
+// printNode converts the provided node & its dependents into table rows.
 func printNode(nodeMap NodeMap, root *Node, withGroup bool) ([]metav1.TableRow, error) {
 	// Track every object kind in the node map & the groups that they belong to.
 	kindToGroupSetMap := map[string](map[string]struct{}){}
@@ -114,7 +116,7 @@ func printNode(nodeMap NodeMap, root *Node, withGroup bool) ([]metav1.TableRow, 
 	return rows, nil
 }
 
-// printNodeDependents converts the given node's dependents into table rows.
+// printNodeDependents converts the provided node's dependents into table rows.
 func printNodeDependents(
 	nodeMap NodeMap,
 	uidSet map[types.UID]struct{},
@@ -157,7 +159,7 @@ func printNodeDependents(
 	return rows, nil
 }
 
-// nodeToTableRow converts the given node into a table row.
+// nodeToTableRow converts the provided node into a table row.
 func nodeToTableRow(node *Node, namePrefix string, showGroupFn func(kind string) bool) metav1.TableRow {
 	var name string
 	if showGroupFn(node.Kind) && len(node.Group) > 0 {
@@ -186,8 +188,8 @@ func nodeToTableRow(node *Node, namePrefix string, showGroupFn func(kind string)
 	}
 }
 
-// newJSONPath returns a JSONPath object created from parsing the given JSON
-// path string.
+// newJSONPath returns a JSONPath object created from parsing the provided JSON
+// path expression.
 func newJSONPath(name, jsonPath string) (*jsonpath.JSONPath, error) {
 	jp := jsonpath.New(name).AllowMissingKeys(true)
 	if err := jp.Parse(jsonPath); err != nil {
@@ -196,8 +198,8 @@ func newJSONPath(name, jsonPath string) (*jsonpath.JSONPath, error) {
 	return jp, nil
 }
 
-// getNestedString returns the field value of a Kubernetes object at the given
-// JSON path.
+// getNestedString returns the field value of a Kubernetes object at the
+// provided JSON path.
 func getNestedString(u unstructuredv1.Unstructured, jp *jsonpath.JSONPath) (string, error) {
 	data := u.UnstructuredContent()
 	values, err := jp.FindResults(data)

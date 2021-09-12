@@ -15,14 +15,14 @@ type PrintFlags struct {
 	OutputFormat       *string
 }
 
-// AllowedFormats is the list of formats in which data can be displayed
+// AllowedFormats is the list of formats in which data can be displayed.
 func (f *PrintFlags) AllowedFormats() []string {
 	formats := []string{}
 	formats = append(formats, f.HumanReadableFlags.AllowedFormats()...)
 	return formats
 }
 
-// Copy returns a copy of PrintFlags for mutation
+// Copy returns a copy of PrintFlags for mutation.
 func (f *PrintFlags) Copy() PrintFlags {
 	printFlags := *f
 	return printFlags
@@ -60,7 +60,7 @@ func (f *PrintFlags) ToPrinter() (printers.ResourcePrinter, error) {
 }
 
 // AddFlags receives a *cobra.Command reference and binds flags related to
-// human-readable printing to it
+// human-readable printing to it.
 func (f *PrintFlags) AddFlags(c *cobra.Command) {
 	f.HumanReadableFlags.AddFlags(c)
 
