@@ -9,6 +9,7 @@ import (
 
 	multierror "github.com/hashicorp/go-multierror"
 	"github.com/spf13/cobra"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	unstructuredv1 "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -182,17 +183,18 @@ func (o *CmdOptions) Validate() error {
 
 // Run implements all the necessary functionality for command.
 func (o *CmdOptions) Run() error {
-	// Fetch the given object to ensure it exists before proceeding
+	// Fetch the root object to ensure it exists before proceeding
 	var ri dynamic.ResourceInterface
-	if o.ResourceScope == meta.RESTScopeNameNamespace {
-		ri = o.DynamicClient.Resource(o.Resource).Namespace(o.Namespace)
-	} else {
+	if o.ResourceScope == meta.RESTScopeNameRoot {
 		ri = o.DynamicClient.Resource(o.Resource)
+	} else {
+		ri = o.DynamicClient.Resource(o.Resource).Namespace(o.Namespace)
 	}
 	rootObject, err := ri.Get(context.Background(), o.ResourceName, metav1.GetOptions{})
 	if err != nil {
 		return err
 	}
+	rootUID := rootObject.GetUID()
 
 	// Fetch all resources in the cluster
 	resources, err := o.getAPIResources()
@@ -204,14 +206,18 @@ func (o *CmdOptions) Run() error {
 		return err
 	}
 
-	// Find all dependents of the given object
-	nodeMap, err := buildRelationshipNodeMap(objects, *rootObject)
+	// Include root object into objects to handle cases where user has access
+	// to get the root object but unable to list it resource type
+	objects = append(objects, *rootObject)
+
+	// Find all dependents of the root object
+	nodeMap, err := buildRelationshipNodeMap(objects, rootUID)
 	if err != nil {
 		return err
 	}
 
 	// Print output
-	err = o.print(nodeMap, rootObject.GetUID())
+	err = o.print(nodeMap, rootUID)
 	if err != nil {
 		return err
 	}
@@ -301,31 +307,47 @@ func (o *CmdOptions) getObjectsByResources(apis []Resource) ([]unstructuredv1.Un
 }
 
 func (o *CmdOptions) getObjectsByResource(api Resource) ([]unstructuredv1.Unstructured, error) {
-	var result []unstructuredv1.Unstructured
+	gvr := api.APIGroupVersionResource
+	resourceScope := o.ResourceScope
 
+list_objects:
+	// If the root object is a namespaced resource, fetch all objects only from
+	// the root object's namespace since its dependents cannot exist in other
+	// namespaces
+	var ri dynamic.ResourceInterface
+	if resourceScope == meta.RESTScopeNameRoot {
+		ri = o.DynamicClient.Resource(gvr)
+	} else {
+		ri = o.DynamicClient.Resource(gvr).Namespace(o.Namespace)
+	}
+
+	var result []unstructuredv1.Unstructured
 	var next string
 	for {
-		// If the root object is a namespaced resource, fetch all objects only from
-		// the root object's namespace since its dependents cannot exist in other
-		// namespaces
-		var ri dynamic.ResourceInterface
-		if o.ResourceScope == meta.RESTScopeNameNamespace {
-			ri = o.DynamicClient.Resource(api.APIGroupVersionResource).Namespace(o.Namespace)
-		} else {
-			ri = o.DynamicClient.Resource(api.APIGroupVersionResource)
-		}
-
 		objectList, err := ri.List(context.Background(), metav1.ListOptions{
 			Limit:    250,
 			Continue: next,
 		})
 		if err != nil {
-			if resource, group := api.APIGroupVersionResource.Resource, api.APIGroupVersionResource.Group; len(group) == 0 {
-				err = fmt.Errorf("failed to list resource type \"%s\": %w", resource, err)
-			} else {
-				err = fmt.Errorf("failed to list resource type \"%s\" in group \"%s\": %w", resource, group, err)
+			switch {
+			case apierrors.IsForbidden(err):
+				// If the user doesn't have access to list the resource at the cluster
+				// scope, attempt to list the resource in the root object's namespace
+				if resourceScope == meta.RESTScopeNameRoot {
+					resourceScope = meta.RESTScopeNameNamespace
+					goto list_objects
+				}
+				// If the user doesn't have access to list the resource in the
+				// namespace, we abort listing the resource
+				return nil, nil
+			default:
+				if resourceScope == meta.RESTScopeNameRoot {
+					err = fmt.Errorf("failed to list resource type \"%s\" in API group \"%s\" at the cluster scope: %w", gvr.Resource, gvr.Group, err)
+				} else {
+					err = fmt.Errorf("failed to list resource type \"%s\" in API group \"%s\" in the namespace \"%s\": %w", gvr.Resource, gvr.Group, o.Namespace, err)
+				}
+				return nil, err
 			}
-			return nil, err
 		}
 		result = append(result, objectList.Items...)
 

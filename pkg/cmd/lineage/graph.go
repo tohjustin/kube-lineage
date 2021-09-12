@@ -19,7 +19,7 @@ type Node struct {
 	Dependents      []types.UID
 }
 
-func buildRelationshipNodeMap(objects []unstructuredv1.Unstructured, root unstructuredv1.Unstructured) (NodeMap, error) {
+func buildRelationshipNodeMap(objects []unstructuredv1.Unstructured, rootUID types.UID) (NodeMap, error) {
 	// Create global node map of all objects
 	globalMap := NodeMap{}
 	for ix, o := range objects {
@@ -42,10 +42,11 @@ func buildRelationshipNodeMap(objects []unstructuredv1.Unstructured, root unstru
 	}
 
 	// Create submap of the root node & its dependents from the global map
-	rootUID := root.GetUID()
-	uidSet := map[types.UID]struct{}{}
-	uidQueue := []types.UID{rootUID}
-	nodeMap := NodeMap{rootUID: globalMap[rootUID]}
+	nodeMap, uidQueue, uidSet := NodeMap{}, []types.UID{}, map[types.UID]struct{}{}
+	if node := globalMap[rootUID]; node != nil {
+		nodeMap[rootUID] = node
+		uidQueue = append(uidQueue, rootUID)
+	}
 	for {
 		if len(uidQueue) == 0 {
 			break
@@ -57,12 +58,14 @@ func buildRelationshipNodeMap(objects []unstructuredv1.Unstructured, root unstru
 			uidQueue = uidQueue[1:]
 			continue
 		} else {
-			uidQueue = append(uidQueue[1:], nodeMap[uid].Dependents...)
 			uidSet[uid] = struct{}{}
 		}
 
-		for _, dUID := range nodeMap[uid].Dependents {
-			nodeMap[dUID] = globalMap[dUID]
+		if node := nodeMap[uid]; node != nil {
+			for _, dUID := range node.Dependents {
+				nodeMap[dUID] = globalMap[dUID]
+			}
+			uidQueue = append(uidQueue[1:], node.Dependents...)
 		}
 	}
 
