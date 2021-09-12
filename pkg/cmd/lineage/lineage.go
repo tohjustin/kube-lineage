@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 
+	multierror "github.com/hashicorp/go-multierror"
 	"github.com/spf13/cobra"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -265,8 +266,9 @@ func (o *CmdOptions) getObjectsByResources(apis []Resource) ([]unstructuredv1.Un
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	var result []unstructuredv1.Unstructured
+	var errResult *multierror.Error
 
-	var errResult error
+	errors := make(chan error, len(apis))
 	for _, api := range apis {
 		// Avoid getting cluster-scoped objects if the root object is a namespaced
 		// resource since cluster-scoped objects cannot have namespaced resources as
@@ -280,7 +282,7 @@ func (o *CmdOptions) getObjectsByResources(apis []Resource) ([]unstructuredv1.Un
 			defer wg.Done()
 			objects, err := o.getObjectsByResource(r)
 			if err != nil {
-				errResult = err
+				errors <- err
 				return
 			}
 			mu.Lock()
@@ -289,8 +291,13 @@ func (o *CmdOptions) getObjectsByResources(apis []Resource) ([]unstructuredv1.Un
 		}(api)
 	}
 	wg.Wait()
+	close(errors)
 
-	return result, errResult
+	for err := range errors {
+		errResult = multierror.Append(errResult, err)
+	}
+
+	return result, errResult.ErrorOrNil()
 }
 
 func (o *CmdOptions) getObjectsByResource(api Resource) ([]unstructuredv1.Unstructured, error) {
