@@ -60,10 +60,31 @@ type CmdOptions struct {
 
 // Resource contains the GroupVersionResource and APIResource for a resource.
 type Resource struct {
-	// GroupVersionResource unambiguously identifies a resource.
-	APIGroupVersionResource schema.GroupVersionResource
-	// APIResource specifies the name of a resource and whether it is namespaced.
-	APIResource metav1.APIResource
+	// Name is the plural name of the resource.
+	Name string
+	// Namespaced indicates if a resource is namespaced or not.
+	Namespaced bool
+	// Group is the preferred group of the resource.
+	Group string
+	// Version is the preferred version of the resource.
+	Version string
+	// Kind is the kind for the resource (e.g. 'Foo' is the kind for a resource 'foo').
+	Kind string
+}
+
+func (r Resource) String() string {
+	if len(r.Group) == 0 {
+		return fmt.Sprintf("%s.%s", r.Name, r.Version)
+	}
+	return fmt.Sprintf("%s.%s.%s", r.Name, r.Version, r.Group)
+}
+
+func (r Resource) GroupVersionResource() schema.GroupVersionResource {
+	return schema.GroupVersionResource{
+		Group:    r.Group,
+		Version:  r.Version,
+		Resource: r.Name,
+	}
 }
 
 // New returns an initialized Command for the lineage command.
@@ -249,23 +270,25 @@ func (o *CmdOptions) getAPIResources(_ context.Context) ([]Resource, error) {
 			if len(resource.Verbs) == 0 || !sets.NewString(resource.Verbs...).HasAll("watch", "list", "get") {
 				continue
 			}
+
+			api := Resource{
+				Name:       resource.Name,
+				Namespaced: resource.Namespaced,
+				Group:      gv.Group,
+				Version:    gv.Version,
+				Kind:       resource.Kind,
+			}
+
 			// Exclude duplicated resources (for Kubernetes v1.18 & above)
 			switch {
 			// migrated to "events.v1.events.k8s.io"
-			case gv.Group == "" && resource.Name == "events":
-				continue
+			case api.Group == "" && api.Name == "events":
+				fallthrough
 			// migrated to "ingresses.v1.networking.k8s.io"
-			case gv.Group == "extensions" && resource.Name == "ingresses":
+			case api.Group == "extensions" && api.Name == "ingresses":
 				continue
 			}
-			resources = append(resources, Resource{
-				APIGroupVersionResource: schema.GroupVersionResource{
-					Group:    gv.Group,
-					Version:  gv.Version,
-					Resource: resource.Name,
-				},
-				APIResource: resource,
-			})
+			resources = append(resources, api)
 		}
 	}
 
@@ -282,7 +305,7 @@ func (o *CmdOptions) getObjectsByResources(ctx context.Context, apis []Resource)
 		// Avoid getting cluster-scoped objects if the root object is a namespaced
 		// resource since cluster-scoped objects cannot have namespaced resources as
 		// an owner reference
-		if o.ResourceScope == meta.RESTScopeNameNamespace && !api.APIResource.Namespaced {
+		if o.ResourceScope == meta.RESTScopeNameNamespace && !api.Namespaced {
 			continue
 		}
 
@@ -308,7 +331,7 @@ func (o *CmdOptions) getObjectsByResources(ctx context.Context, apis []Resource)
 
 // getObjectsByResource fetches & returns all objects of the provided resource.
 func (o *CmdOptions) getObjectsByResource(ctx context.Context, api Resource) ([]unstructuredv1.Unstructured, error) {
-	gvr := api.APIGroupVersionResource
+	gvr := api.GroupVersionResource()
 	resourceScope := o.ResourceScope
 
 list_objects:
@@ -343,9 +366,9 @@ list_objects:
 				return nil, nil
 			default:
 				if resourceScope == meta.RESTScopeNameRoot {
-					err = fmt.Errorf("failed to list resource type \"%s\" in API group \"%s\" at the cluster scope: %w", gvr.Resource, gvr.Group, err)
+					err = fmt.Errorf("failed to list resource type \"%s\" in API group \"%s\" at the cluster scope: %w", api.Name, api.Group, err)
 				} else {
-					err = fmt.Errorf("failed to list resource type \"%s\" in API group \"%s\" in the namespace \"%s\": %w", gvr.Resource, gvr.Group, o.Namespace, err)
+					err = fmt.Errorf("failed to list resource type \"%s\" in API group \"%s\" in the namespace \"%s\": %w", api.Name, api.Group, o.Namespace, err)
 				}
 				return nil, err
 			}
