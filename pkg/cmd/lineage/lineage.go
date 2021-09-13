@@ -457,9 +457,9 @@ func resourceScopeFor(mapper meta.RESTMapper, gvr schema.GroupVersionResource) (
 	if gk.Empty() {
 		if err != nil {
 			if len(gvr.Group) == 0 {
-				err = fmt.Errorf("the server couldn't resolve a kind for resource type \"%s\"", gvr.Resource)
+				err = fmt.Errorf("the server couldn't identify a kind for resource type \"%s\"", gvr.Resource)
 			} else {
-				err = fmt.Errorf("the server couldn't resolve a kind for resource type \"%s\" in group \"%s\"", gvr.Resource, gvr.Group)
+				err = fmt.Errorf("the server couldn't identify a kind for resource type \"%s\" in group \"%s\"", gvr.Resource, gvr.Group)
 			}
 			return ret, err
 		}
@@ -467,9 +467,9 @@ func resourceScopeFor(mapper meta.RESTMapper, gvr schema.GroupVersionResource) (
 	mapping, err := mapper.RESTMapping(gk.GroupKind())
 	if err != nil {
 		if len(gvr.Group) == 0 {
-			err = fmt.Errorf("the server couldn't resolve a kind for resource type \"%s\"", gvr.Resource)
+			err = fmt.Errorf("the server couldn't identify a group kind for resource type \"%s\"", gvr.Resource)
 		} else {
-			err = fmt.Errorf("the server couldn't resolve a kind for resource type \"%s\" in group \"%s\"", gvr.Resource, gvr.Group)
+			err = fmt.Errorf("the server couldn't identify a group kind for resource type \"%s\" in group \"%s\"", gvr.Resource, gvr.Group)
 		}
 		return ret, err
 	}
