@@ -21,6 +21,7 @@ import (
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
+	"k8s.io/klog/v2"
 	cmdutil "k8s.io/kubectl/pkg/cmd/util"
 	"k8s.io/kubectl/pkg/util/templates"
 )
@@ -111,6 +112,7 @@ func New(streams genericclioptions.IOStreams) *cobra.Command {
 
 	o.ConfigFlags.AddFlags(cmd.Flags())
 	o.PrintFlags.AddFlags(cmd.Flags())
+	addLogFlags(cmd.Flags())
 
 	return cmd
 }
