@@ -89,7 +89,7 @@ func New(streams genericclioptions.IOStreams) *cobra.Command {
 	}
 
 	o.ConfigFlags.AddFlags(cmd.Flags())
-	o.PrintFlags.AddFlags(cmd)
+	o.PrintFlags.AddFlags(cmd.Flags())
 
 	return cmd
 }

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/cli-runtime/pkg/printers"
 )
@@ -61,11 +61,11 @@ func (f *PrintFlags) ToPrinter() (printers.ResourcePrinter, error) {
 
 // AddFlags receives a *cobra.Command reference and binds flags related to
 // human-readable printing to it.
-func (f *PrintFlags) AddFlags(c *cobra.Command) {
-	f.HumanReadableFlags.AddFlags(c)
+func (f *PrintFlags) AddFlags(flags *pflag.FlagSet) {
+	f.HumanReadableFlags.AddFlags(flags)
 
 	if f.OutputFormat != nil {
-		c.Flags().StringVarP(f.OutputFormat, "output", "o", *f.OutputFormat, fmt.Sprintf("Output format. One of: %s.", strings.Join(f.AllowedFormats(), "|")))
+		flags.StringVarP(f.OutputFormat, "output", "o", *f.OutputFormat, fmt.Sprintf("Output format. One of: %s.", strings.Join(f.AllowedFormats(), "|")))
 	}
 }
 

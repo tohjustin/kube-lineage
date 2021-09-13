@@ -1,7 +1,7 @@
 package lineage
 
 import (
-	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/cli-runtime/pkg/printers"
 )
@@ -59,15 +59,15 @@ func (f *HumanPrintFlags) ToPrinter(outputFormat string) (printers.ResourcePrint
 
 // AddFlags receives a *cobra.Command reference and binds flags related to
 // human-readable printing to it.
-func (f *HumanPrintFlags) AddFlags(c *cobra.Command) {
+func (f *HumanPrintFlags) AddFlags(flags *pflag.FlagSet) {
 	if f.NoHeaders != nil {
-		c.Flags().BoolVar(f.NoHeaders, "no-headers", *f.NoHeaders, "When using the default output format, don't print headers (default print headers).")
+		flags.BoolVar(f.NoHeaders, "no-headers", *f.NoHeaders, "When using the default output format, don't print headers (default print headers).")
 	}
 	if f.ShowLabels != nil {
-		c.Flags().BoolVar(f.ShowLabels, "show-labels", *f.ShowLabels, "When printing, show all labels as the last column (default hide labels column)")
+		flags.BoolVar(f.ShowLabels, "show-labels", *f.ShowLabels, "When printing, show all labels as the last column (default hide labels column)")
 	}
 	if f.ShowGroup != nil {
-		c.Flags().BoolVar(f.ShowGroup, "show-group", *f.ShowGroup, "If present, include the resource group for the requested object(s).")
+		flags.BoolVar(f.ShowGroup, "show-group", *f.ShowGroup, "If present, include the resource group for the requested object(s).")
 	}
 }
 
