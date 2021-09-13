@@ -201,6 +201,18 @@ func (o *CmdOptions) Validate() error {
 		return errors.New("client config, client must be provided")
 	}
 
+	klog.V(4).Infof("Namespace: %s", o.Namespace)
+	klog.V(4).Infof("Resource: %s", o.Resource)
+	klog.V(4).Infof("ResourceName: %s", o.ResourceName)
+	klog.V(4).Infof("ResourceScope: %s", o.ResourceScope)
+	klog.V(4).Infof("ConfigFlags.Context: %s", *o.ConfigFlags.Context)
+	klog.V(4).Infof("ConfigFlags.Namespace: %s", *o.ConfigFlags.Namespace)
+	klog.V(4).Infof("PrintFlags.OutputFormat: %s", *o.PrintFlags.OutputFormat)
+	klog.V(4).Infof("PrintFlags.NoHeaders: %t", *o.PrintFlags.HumanReadableFlags.NoHeaders)
+	klog.V(4).Infof("PrintFlags.ShowGroup: %t", *o.PrintFlags.HumanReadableFlags.ShowGroup)
+	klog.V(4).Infof("PrintFlags.ShowLabels: %t", *o.PrintFlags.HumanReadableFlags.ShowLabels)
+	klog.V(4).Infof("PrintFlags.WithNamespace: %t", o.PrintFlags.HumanReadableFlags.WithNamespace)
+
 	return nil
 }
 
@@ -288,12 +300,14 @@ func (o *CmdOptions) getAPIResources(_ context.Context) ([]Resource, error) {
 				fallthrough
 			// migrated to "ingresses.v1.networking.k8s.io"
 			case api.Group == "extensions" && api.Name == "ingresses":
+				klog.V(4).Infof("Exclude duplicated resource from discovered API resources: %s", api)
 				continue
 			}
 			resources = append(resources, api)
 		}
 	}
 
+	klog.V(4).Infof("Discovered %d available API resources to list", len(resources))
 	return resources, nil
 }
 
@@ -308,6 +322,7 @@ func (o *CmdOptions) getObjectsByResources(ctx context.Context, apis []Resource)
 		// resource since cluster-scoped objects cannot have namespaced resources as
 		// an owner reference
 		if o.ResourceScope == meta.RESTScopeNameNamespace && !api.Namespaced {
+			klog.V(4).Infof("Skip getting objects for resource: %s", api)
 			continue
 		}
 
@@ -328,20 +343,21 @@ func (o *CmdOptions) getObjectsByResources(ctx context.Context, apis []Resource)
 		return nil, err
 	}
 
+	klog.V(4).Infof("Got %4d objects from %d API resources", len(result), len(apis))
 	return result, nil
 }
 
 // getObjectsByResource fetches & returns all objects of the provided resource.
 func (o *CmdOptions) getObjectsByResource(ctx context.Context, api Resource) ([]unstructuredv1.Unstructured, error) {
 	gvr := api.GroupVersionResource()
-	resourceScope := o.ResourceScope
-
-list_objects:
 	// If the root object is a namespaced resource, fetch all objects only from
 	// the root object's namespace since its dependents cannot exist in other
 	// namespaces
+	scope := o.ResourceScope
+
+list_objects:
 	var ri dynamic.ResourceInterface
-	if resourceScope == meta.RESTScopeNameRoot {
+	if scope == meta.RESTScopeNameRoot {
 		ri = o.DynamicClient.Resource(gvr)
 	} else {
 		ri = o.DynamicClient.Resource(gvr).Namespace(o.Namespace)
@@ -359,15 +375,17 @@ list_objects:
 			case apierrors.IsForbidden(err):
 				// If the user doesn't have access to list the resource at the cluster
 				// scope, attempt to list the resource in the root object's namespace
-				if resourceScope == meta.RESTScopeNameRoot {
-					resourceScope = meta.RESTScopeNameNamespace
+				if scope == meta.RESTScopeNameRoot {
+					klog.V(4).Infof("No access to list at cluster scope for resource: %s", api)
+					scope = meta.RESTScopeNameNamespace
 					goto list_objects
 				}
 				// If the user doesn't have access to list the resource in the
 				// namespace, we abort listing the resource
+				klog.V(4).Infof("No access to list in the namespace \"%s\" for resource: %s", o.Namespace, api)
 				return nil, nil
 			default:
-				if resourceScope == meta.RESTScopeNameRoot {
+				if scope == meta.RESTScopeNameRoot {
 					err = fmt.Errorf("failed to list resource type \"%s\" in API group \"%s\" at the cluster scope: %w", api.Name, api.Group, err)
 				} else {
 					err = fmt.Errorf("failed to list resource type \"%s\" in API group \"%s\" in the namespace \"%s\": %w", api.Name, api.Group, o.Namespace, err)
@@ -381,6 +399,12 @@ list_objects:
 		if len(next) == 0 {
 			break
 		}
+	}
+
+	if scope == meta.RESTScopeNameRoot {
+		klog.V(4).Infof("Got %4d objects from resource at the cluster scope: %s", len(result), api)
+	} else {
+		klog.V(4).Infof("Got %4d objects from resource in the namespace \"%s\": %s", len(result), api, o.Namespace)
 	}
 	return result, nil
 }

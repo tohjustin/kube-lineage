@@ -4,6 +4,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	unstructuredv1 "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/klog/v2"
 )
 
 // NodeMap represents an owner-dependent relationship tree stored as flat list
@@ -83,5 +84,6 @@ func resolveDependents(objects []unstructuredv1.Unstructured, rootUID types.UID)
 		o.Namespace = o.GetNamespace()
 	}
 
+	klog.V(4).Infof("Resolved %d dependents for root object (uid: %s)", len(nodeMap)-1, rootUID)
 	return nodeMap, nil
 }
