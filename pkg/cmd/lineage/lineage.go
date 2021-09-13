@@ -7,8 +7,8 @@ import (
 	"strings"
 	"sync"
 
-	multierror "github.com/hashicorp/go-multierror"
 	"github.com/spf13/cobra"
+	"golang.org/x/sync/errgroup"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -183,6 +183,8 @@ func (o *CmdOptions) Validate() error {
 
 // Run implements all the necessary functionality for command.
 func (o *CmdOptions) Run() error {
+	ctx := context.Background()
+
 	// Fetch the root object to ensure it exists before proceeding
 	var ri dynamic.ResourceInterface
 	if o.ResourceScope == meta.RESTScopeNameRoot {
@@ -190,18 +192,18 @@ func (o *CmdOptions) Run() error {
 	} else {
 		ri = o.DynamicClient.Resource(o.Resource).Namespace(o.Namespace)
 	}
-	rootObject, err := ri.Get(context.Background(), o.ResourceName, metav1.GetOptions{})
+	rootObject, err := ri.Get(ctx, o.ResourceName, metav1.GetOptions{})
 	if err != nil {
 		return err
 	}
 	rootUID := rootObject.GetUID()
 
 	// Fetch all resources in the cluster
-	resources, err := o.getAPIResources()
+	resources, err := o.getAPIResources(ctx)
 	if err != nil {
 		return err
 	}
-	objects, err := o.getObjectsByResources(resources)
+	objects, err := o.getObjectsByResources(ctx, resources)
 	if err != nil {
 		return err
 	}
@@ -227,7 +229,7 @@ func (o *CmdOptions) Run() error {
 
 // getAPIResources fetches & returns all API resources that exists on the
 // cluster.
-func (o *CmdOptions) getAPIResources() ([]Resource, error) {
+func (o *CmdOptions) getAPIResources(_ context.Context) ([]Resource, error) {
 	lists, err := o.DiscoveryClient.ServerPreferredResources()
 	if err != nil {
 		return nil, err
@@ -272,13 +274,10 @@ func (o *CmdOptions) getAPIResources() ([]Resource, error) {
 
 // getObjectsByResources fetches & returns all objects of the provided list of
 // resources.
-func (o *CmdOptions) getObjectsByResources(apis []Resource) ([]unstructuredv1.Unstructured, error) {
+func (o *CmdOptions) getObjectsByResources(ctx context.Context, apis []Resource) ([]unstructuredv1.Unstructured, error) {
 	var mu sync.Mutex
-	var wg sync.WaitGroup
 	var result []unstructuredv1.Unstructured
-	var errResult *multierror.Error
-
-	errors := make(chan error, len(apis))
+	g, ctx := errgroup.WithContext(ctx)
 	for _, api := range apis {
 		// Avoid getting cluster-scoped objects if the root object is a namespaced
 		// resource since cluster-scoped objects cannot have namespaced resources as
@@ -287,31 +286,28 @@ func (o *CmdOptions) getObjectsByResources(apis []Resource) ([]unstructuredv1.Un
 			continue
 		}
 
-		wg.Add(1)
-		go func(r Resource) {
-			defer wg.Done()
-			objects, err := o.getObjectsByResource(r)
+		resource := api
+		g.Go(func() error {
+			objects, err := o.getObjectsByResource(ctx, resource)
 			if err != nil {
-				errors <- err
-				return
+				return err
 			}
 			mu.Lock()
 			result = append(result, objects...)
 			mu.Unlock()
-		}(api)
-	}
-	wg.Wait()
-	close(errors)
 
-	for err := range errors {
-		errResult = multierror.Append(errResult, err)
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return nil, err
 	}
 
-	return result, errResult.ErrorOrNil()
+	return result, nil
 }
 
 // getObjectsByResource fetches & returns all objects of the provided resource.
-func (o *CmdOptions) getObjectsByResource(api Resource) ([]unstructuredv1.Unstructured, error) {
+func (o *CmdOptions) getObjectsByResource(ctx context.Context, api Resource) ([]unstructuredv1.Unstructured, error) {
 	gvr := api.APIGroupVersionResource
 	resourceScope := o.ResourceScope
 
@@ -329,7 +325,7 @@ list_objects:
 	var result []unstructuredv1.Unstructured
 	var next string
 	for {
-		objectList, err := ri.List(context.Background(), metav1.ListOptions{
+		objectList, err := ri.List(ctx, metav1.ListOptions{
 			Limit:    250,
 			Continue: next,
 		})
