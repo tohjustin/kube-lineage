@@ -197,6 +197,11 @@ func (o *CmdOptions) Complete(cmd *cobra.Command, args []string) error {
 		},
 	}
 	o.RequestScope = *scope
+	// If user explicitly specify to list object relationships across all
+	// namespaces, set scope for list operation to root level
+	if o.ConfigFlags.AllNamespaces != nil && *o.ConfigFlags.AllNamespaces {
+		o.RequestScope = meta.RESTScopeNameRoot
+	}
 
 	o.ClientConfig, err = o.ConfigFlags.ToRESTConfig()
 	if err != nil {
@@ -256,6 +261,7 @@ func (o *CmdOptions) Validate() error {
 	klog.V(4).Infof("Namespace: %s", o.Namespace)
 	klog.V(4).Infof("RequestObject: %v", o.RequestObject)
 	klog.V(4).Infof("RequestScope: %v", o.RequestScope)
+	klog.V(4).Infof("ConfigFlags.AllNamespaces: %t", *o.ConfigFlags.AllNamespaces)
 	klog.V(4).Infof("ConfigFlags.Context: %s", *o.ConfigFlags.Context)
 	klog.V(4).Infof("ConfigFlags.Namespace: %s", *o.ConfigFlags.Namespace)
 	klog.V(4).Infof("PrintFlags.OutputFormat: %s", *o.PrintFlags.OutputFormat)
@@ -397,9 +403,6 @@ func (o *CmdOptions) getObjectsByResources(ctx context.Context, apis []Resource)
 // getObjectsByResource fetches & returns all objects of the provided resource.
 func (o *CmdOptions) getObjectsByResource(ctx context.Context, api Resource) ([]unstructuredv1.Unstructured, error) {
 	gvr := api.GroupVersionResource()
-	// If the root object is a namespaced resource, fetch all objects only from
-	// the root object's namespace since its dependents cannot exist in other
-	// namespaces
 	scope := o.RequestScope
 
 list_objects:
