@@ -7,15 +7,18 @@ import (
 )
 
 const (
-	flagNoHeaders  = "no-headers"
-	flagShowLabels = "show-labels"
-	flagShowGroup  = "show-group"
+	flagColumnLabel          = "label-columns"
+	flagColumnLabelShorthand = "L"
+	flagNoHeaders            = "no-headers"
+	flagShowLabels           = "show-labels"
+	flagShowGroup            = "show-group"
 )
 
 // HumanPrintFlags provides default flags necessary for printing. Given the
 // following flag values, a printer can be requested that knows how to handle
 // printing based on these values.
 type HumanPrintFlags struct {
+	ColumnLabels  *[]string
 	NoHeaders     *bool
 	ShowGroup     *bool
 	ShowLabels    *bool
@@ -46,6 +49,10 @@ func (f *HumanPrintFlags) ToPrinter(outputFormat string) (printers.ResourcePrint
 	if len(outputFormat) > 0 && outputFormat != "wide" {
 		return nil, genericclioptions.NoCompatiblePrinterError{Options: f, AllowedFormats: f.AllowedFormats()}
 	}
+	columnLabels := []string{}
+	if f.ColumnLabels != nil {
+		columnLabels = *f.ColumnLabels
+	}
 	noHeaders := false
 	if f.NoHeaders != nil {
 		noHeaders = *f.NoHeaders
@@ -58,6 +65,7 @@ func (f *HumanPrintFlags) ToPrinter(outputFormat string) (printers.ResourcePrint
 		NoHeaders:     noHeaders,
 		ShowLabels:    showLabels,
 		Wide:          outputFormat == "wide",
+		ColumnLabels:  columnLabels,
 		WithNamespace: f.WithNamespace,
 	})
 	return p, nil
@@ -66,6 +74,9 @@ func (f *HumanPrintFlags) ToPrinter(outputFormat string) (printers.ResourcePrint
 // AddFlags receives a *cobra.Command reference and binds flags related to
 // human-readable printing to it.
 func (f *HumanPrintFlags) AddFlags(flags *pflag.FlagSet) {
+	if f.ColumnLabels != nil {
+		flags.StringSliceVarP(f.ColumnLabels, flagColumnLabel, flagColumnLabelShorthand, *f.ColumnLabels, "Accepts a comma separated list of labels that are going to be presented as columns. Names are case-sensitive. You can also use multiple flag options like -L label1 -L label2...")
+	}
 	if f.NoHeaders != nil {
 		flags.BoolVar(f.NoHeaders, flagNoHeaders, *f.NoHeaders, "When using the default output format, don't print headers (default print headers).")
 	}
@@ -80,11 +91,13 @@ func (f *HumanPrintFlags) AddFlags(flags *pflag.FlagSet) {
 // NewHumanPrintFlags returns flags associated with human-readable printing,
 // with default values set.
 func NewHumanPrintFlags() *HumanPrintFlags {
+	columnLabels := []string{}
 	noHeaders := false
 	showGroup := false
 	showLabels := false
 
 	return &HumanPrintFlags{
+		ColumnLabels:  &columnLabels,
 		NoHeaders:     &noHeaders,
 		ShowGroup:     &showGroup,
 		ShowLabels:    &showLabels,
