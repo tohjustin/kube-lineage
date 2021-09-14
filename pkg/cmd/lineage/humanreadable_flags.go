@@ -6,6 +6,12 @@ import (
 	"k8s.io/cli-runtime/pkg/printers"
 )
 
+const (
+	flagNoHeaders  = "no-headers"
+	flagShowLabels = "show-labels"
+	flagShowGroup  = "show-group"
+)
+
 // HumanPrintFlags provides default flags necessary for printing. Given the
 // following flag values, a printer can be requested that knows how to handle
 // printing based on these values.
@@ -61,13 +67,13 @@ func (f *HumanPrintFlags) ToPrinter(outputFormat string) (printers.ResourcePrint
 // human-readable printing to it.
 func (f *HumanPrintFlags) AddFlags(flags *pflag.FlagSet) {
 	if f.NoHeaders != nil {
-		flags.BoolVar(f.NoHeaders, "no-headers", *f.NoHeaders, "When using the default output format, don't print headers (default print headers).")
+		flags.BoolVar(f.NoHeaders, flagNoHeaders, *f.NoHeaders, "When using the default output format, don't print headers (default print headers).")
 	}
 	if f.ShowLabels != nil {
-		flags.BoolVar(f.ShowLabels, "show-labels", *f.ShowLabels, "When printing, show all labels as the last column (default hide labels column)")
+		flags.BoolVar(f.ShowLabels, flagShowLabels, *f.ShowLabels, "When printing, show all labels as the last column (default hide labels column)")
 	}
 	if f.ShowGroup != nil {
-		flags.BoolVar(f.ShowGroup, "show-group", *f.ShowGroup, "If present, include the resource group for the requested object(s).")
+		flags.BoolVar(f.ShowGroup, flagShowGroup, *f.ShowGroup, "If present, include the resource group for the requested object(s).")
 	}
 }
 

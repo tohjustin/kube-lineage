@@ -9,7 +9,11 @@ import (
 	"k8s.io/cli-runtime/pkg/printers"
 )
 
-// PrintFlags composes common printer flag structs used in the lineage command.
+const (
+	flagOutputFormat = "output"
+)
+
+// PrintFlags composes common printer flag structs used in the command.
 type PrintFlags struct {
 	HumanReadableFlags *HumanPrintFlags
 	OutputFormat       *string
@@ -65,13 +69,13 @@ func (f *PrintFlags) AddFlags(flags *pflag.FlagSet) {
 	f.HumanReadableFlags.AddFlags(flags)
 
 	if f.OutputFormat != nil {
-		flags.StringVarP(f.OutputFormat, "output", "o", *f.OutputFormat, fmt.Sprintf("Output format. One of: %s.", strings.Join(f.AllowedFormats(), "|")))
+		flags.StringVarP(f.OutputFormat, flagOutputFormat, "o", *f.OutputFormat, fmt.Sprintf("Output format. One of: %s.", strings.Join(f.AllowedFormats(), "|")))
 	}
 }
 
-// NewLineagePrintFlags returns flags associated with human-readable printing,
+// NewPrintFlags returns flags associated with human-readable printing,
 // with default values set.
-func NewLineagePrintFlags() *PrintFlags {
+func NewPrintFlags() *PrintFlags {
 	outputFormat := ""
 
 	return &PrintFlags{

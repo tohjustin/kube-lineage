@@ -43,18 +43,18 @@ var (
 
 // CmdOptions contains all the options for running the lineage command.
 type CmdOptions struct {
-	ConfigFlags *genericclioptions.ConfigFlags
-	PrintFlags  *PrintFlags
-	ToPrinter   func(withGroup bool, withNamespace bool) (printers.ResourcePrinterFunc, error)
+	Resource      schema.GroupVersionResource
+	ResourceName  string
+	ResourceScope meta.RESTScopeName
 
+	ConfigFlags     *ConfigFlags
 	ClientConfig    *rest.Config
 	DynamicClient   dynamic.Interface
 	DiscoveryClient discovery.DiscoveryInterface
 	Namespace       string
 
-	Resource      schema.GroupVersionResource
-	ResourceName  string
-	ResourceScope meta.RESTScopeName
+	PrintFlags *PrintFlags
+	ToPrinter  func(withGroup bool, withNamespace bool) (printers.ResourcePrinterFunc, error)
 
 	genericclioptions.IOStreams
 }
@@ -91,8 +91,8 @@ func (r Resource) GroupVersionResource() schema.GroupVersionResource {
 // New returns an initialized Command for the lineage command.
 func New(streams genericclioptions.IOStreams) *cobra.Command {
 	o := &CmdOptions{
-		ConfigFlags: genericclioptions.NewConfigFlags(true),
-		PrintFlags:  NewLineagePrintFlags(),
+		ConfigFlags: NewConfigFlags(),
+		PrintFlags:  NewPrintFlags(),
 		IOStreams:   streams,
 	}
 
