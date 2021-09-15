@@ -114,6 +114,7 @@ func New(streams genericclioptions.IOStreams) *cobra.Command {
 	o.ConfigFlags.AddFlags(cmd.Flags())
 	o.PrintFlags.AddFlags(cmd.Flags())
 	addLogFlags(cmd.Flags())
+	addVersionFlag(cmd)
 
 	return cmd
 }
@@ -202,6 +203,7 @@ func (o *CmdOptions) Validate() error {
 		return errors.New("client config, client must be provided")
 	}
 
+	klog.V(4).Infof("Version: %s", getVersion())
 	klog.V(4).Infof("Namespace: %s", o.Namespace)
 	klog.V(4).Infof("Resource: %s", o.Resource)
 	klog.V(4).Infof("ResourceName: %s", o.ResourceName)
