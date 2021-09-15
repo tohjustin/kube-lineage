@@ -98,10 +98,11 @@ func New(streams genericclioptions.IOStreams) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:                   "lineage (TYPE[.VERSION][.GROUP] [NAME] | TYPE[.VERSION][.GROUP]/NAME) [flags]",
-		DisableFlagsInUseLine: true,
 		Short:                 "Display all dependents of a Kubernetes object",
 		Long:                  cmdLong,
 		Example:               cmdExample,
+		DisableFlagsInUseLine: true,
+		DisableSuggestions:    true,
 		SilenceUsage:          true,
 		Run: func(c *cobra.Command, args []string) {
 			cmdutil.CheckErr(o.Complete(c, args))
