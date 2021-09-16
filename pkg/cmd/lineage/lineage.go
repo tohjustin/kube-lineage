@@ -43,9 +43,10 @@ var (
 
 // CmdOptions contains all the options for running the lineage command.
 type CmdOptions struct {
-	Resource      schema.GroupVersionResource
-	ResourceName  string
-	ResourceScope meta.RESTScopeName
+	// RequestObject represents the requested object.
+	RequestObject Object
+	// RequestScope represents the scope of requested object.
+	RequestScope meta.RESTScopeName
 
 	ConfigFlags     *ConfigFlags
 	ClientConfig    *rest.Config
@@ -59,7 +60,17 @@ type CmdOptions struct {
 	genericclioptions.IOStreams
 }
 
-// Resource contains the GroupVersionResource and APIResource for a resource.
+// Object represents a Kubernetes object.
+type Object struct {
+	Name string
+	Resource
+}
+
+func (o Object) String() string {
+	return fmt.Sprintf("%s/%s", o.Resource, o.Name)
+}
+
+// Resource represents a Kubernetes resource.
 type Resource struct {
 	// Name is the plural name of the resource.
 	Name string
@@ -78,6 +89,14 @@ func (r Resource) String() string {
 		return fmt.Sprintf("%s.%s", r.Name, r.Version)
 	}
 	return fmt.Sprintf("%s.%s.%s", r.Name, r.Version, r.Group)
+}
+
+func (r Resource) GroupVersionKind() schema.GroupVersionKind {
+	return schema.GroupVersionKind{
+		Group:   r.Group,
+		Version: r.Version,
+		Kind:    r.Kind,
+	}
 }
 
 func (r Resource) GroupVersionResource() schema.GroupVersionResource {
@@ -140,15 +159,26 @@ func (o *CmdOptions) Complete(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	o.Resource, err = resourceFor(restMapper, resourceType)
+	name := resourceName
+	gvr, gvk, err := resourceFor(restMapper, resourceType)
 	if err != nil {
 		return err
 	}
-	o.ResourceName = resourceName
-	o.ResourceScope, err = resourceScopeFor(restMapper, o.Resource)
+	scope, err := resourceScopeFor(restMapper, *gvk)
 	if err != nil {
 		return err
 	}
+	o.RequestObject = Object{
+		Name: name,
+		Resource: Resource{
+			Name:       gvr.Resource,
+			Namespaced: *scope == meta.RESTScopeNameNamespace,
+			Group:      gvk.Group,
+			Version:    gvk.Version,
+			Kind:       gvk.Kind,
+		},
+	}
+	o.RequestScope = *scope
 
 	o.ClientConfig, err = o.ConfigFlags.ToRESTConfig()
 	if err != nil {
@@ -195,7 +225,9 @@ func (o *CmdOptions) Complete(cmd *cobra.Command, args []string) error {
 
 // Validate validates all the required options for the lineage command.
 func (o *CmdOptions) Validate() error {
-	if o.Resource.Empty() || len(o.ResourceName) == 0 {
+	if len(o.RequestObject.Name) == 0 ||
+		o.RequestObject.GroupVersionResource().Empty() ||
+		o.RequestObject.GroupVersionKind().Empty() {
 		return errors.New("resource TYPE/NAME must be specified")
 	}
 
@@ -205,9 +237,8 @@ func (o *CmdOptions) Validate() error {
 
 	klog.V(4).Infof("Version: %s", getVersion())
 	klog.V(4).Infof("Namespace: %s", o.Namespace)
-	klog.V(4).Infof("Resource: %s", o.Resource)
-	klog.V(4).Infof("ResourceName: %s", o.ResourceName)
-	klog.V(4).Infof("ResourceScope: %s", o.ResourceScope)
+	klog.V(4).Infof("RequestObject: %v", o.RequestObject)
+	klog.V(4).Infof("RequestScope: %v", o.RequestScope)
 	klog.V(4).Infof("ConfigFlags.Context: %s", *o.ConfigFlags.Context)
 	klog.V(4).Infof("ConfigFlags.Namespace: %s", *o.ConfigFlags.Namespace)
 	klog.V(4).Infof("PrintFlags.OutputFormat: %s", *o.PrintFlags.OutputFormat)
@@ -221,20 +252,24 @@ func (o *CmdOptions) Validate() error {
 
 // Run implements all the necessary functionality for command.
 func (o *CmdOptions) Run() error {
+	var rootObject *unstructuredv1.Unstructured
+	var rootUID types.UID
+	var err error
 	ctx := context.Background()
 
 	// Fetch the root object to ensure it exists before proceeding
 	var ri dynamic.ResourceInterface
-	if o.ResourceScope == meta.RESTScopeNameRoot {
-		ri = o.DynamicClient.Resource(o.Resource)
+	gvr := o.RequestObject.GroupVersionResource()
+	if o.RequestObject.Namespaced {
+		ri = o.DynamicClient.Resource(gvr).Namespace(o.Namespace)
 	} else {
-		ri = o.DynamicClient.Resource(o.Resource).Namespace(o.Namespace)
+		ri = o.DynamicClient.Resource(gvr)
 	}
-	rootObject, err := ri.Get(ctx, o.ResourceName, metav1.GetOptions{})
+	rootObject, err = ri.Get(ctx, o.RequestObject.Name, metav1.GetOptions{})
 	if err != nil {
 		return err
 	}
-	rootUID := rootObject.GetUID()
+	rootUID = rootObject.GetUID()
 
 	// Fetch all resources in the cluster
 	resources, err := o.getAPIResources(ctx)
@@ -324,7 +359,7 @@ func (o *CmdOptions) getObjectsByResources(ctx context.Context, apis []Resource)
 		// Avoid getting cluster-scoped objects if the root object is a namespaced
 		// resource since cluster-scoped objects cannot have namespaced resources as
 		// an owner reference
-		if o.ResourceScope == meta.RESTScopeNameNamespace && !api.Namespaced {
+		if o.RequestScope == meta.RESTScopeNameNamespace && !api.Namespaced {
 			klog.V(4).Infof("Skip getting objects for resource: %s", api)
 			continue
 		}
@@ -356,7 +391,7 @@ func (o *CmdOptions) getObjectsByResource(ctx context.Context, api Resource) ([]
 	// If the root object is a namespaced resource, fetch all objects only from
 	// the root object's namespace since its dependents cannot exist in other
 	// namespaces
-	scope := o.ResourceScope
+	scope := o.RequestScope
 
 list_objects:
 	var ri dynamic.ResourceInterface
@@ -426,7 +461,7 @@ func (o *CmdOptions) print(nodeMap NodeMap, rootUID types.UID) error {
 	}
 	// Display namespace column only if objects are in different namespaces
 	withNamespace := false
-	if o.ResourceScope != meta.RESTScopeNameNamespace {
+	if o.RequestScope != meta.RESTScopeNameNamespace {
 		for _, node := range nodeMap {
 			if root.Namespace != node.Namespace {
 				withNamespace = true
@@ -455,16 +490,18 @@ func (o *CmdOptions) print(nodeMap NodeMap, rootUID types.UID) error {
 	return nil
 }
 
-// resourceFor returns the GroupVersionResource that matches provided resource
-// argument string.
-func resourceFor(mapper meta.RESTMapper, resourceArg string) (schema.GroupVersionResource, error) {
+// resourceFor returns the GroupVersionResource & GroupVersionKind that matches
+// provided resource argument string.
+func resourceFor(mapper meta.RESTMapper, resourceArg string) (*schema.GroupVersionResource, *schema.GroupVersionKind, error) {
+	var gvr schema.GroupVersionResource
+	var gvk schema.GroupVersionKind
+	var err error
+
 	fullySpecifiedGVR, Resource := schema.ParseResourceArg(strings.ToLower(resourceArg))
-	gvr := schema.GroupVersionResource{}
 	if fullySpecifiedGVR != nil {
 		gvr, _ = mapper.ResourceFor(*fullySpecifiedGVR)
 	}
 	if gvr.Empty() {
-		var err error
 		gvr, err = mapper.ResourceFor(Resource.WithVersion(""))
 		if err != nil {
 			if len(Resource.Group) == 0 {
@@ -472,37 +509,38 @@ func resourceFor(mapper meta.RESTMapper, resourceArg string) (schema.GroupVersio
 			} else {
 				err = fmt.Errorf("the server doesn't have a resource type \"%s\" in group \"%s\"", Resource.Resource, Resource.Group)
 			}
-			return schema.GroupVersionResource{Resource: resourceArg}, err
+			return nil, nil, err
 		}
 	}
 
-	return gvr, nil
-}
-
-// resourceScopeFor returns the scope of the provided GroupVersionResource.
-func resourceScopeFor(mapper meta.RESTMapper, gvr schema.GroupVersionResource) (meta.RESTScopeName, error) {
-	ret := meta.RESTScopeNameNamespace
-	gk, err := mapper.KindFor(gvr)
-	if gk.Empty() {
+	gvk, err = mapper.KindFor(gvr)
+	if gvk.Empty() {
 		if err != nil {
 			if len(gvr.Group) == 0 {
 				err = fmt.Errorf("the server couldn't identify a kind for resource type \"%s\"", gvr.Resource)
 			} else {
 				err = fmt.Errorf("the server couldn't identify a kind for resource type \"%s\" in group \"%s\"", gvr.Resource, gvr.Group)
 			}
-			return ret, err
+			return nil, nil, err
 		}
 	}
-	mapping, err := mapper.RESTMapping(gk.GroupKind())
+
+	return &gvr, &gvk, nil
+}
+
+// resourceScopeFor returns the scope of the provided GroupVersionKind.
+func resourceScopeFor(mapper meta.RESTMapper, gvk schema.GroupVersionKind) (*meta.RESTScopeName, error) {
+	ret := meta.RESTScopeNameNamespace
+	mapping, err := mapper.RESTMapping(gvk.GroupKind())
 	if err != nil {
-		if len(gvr.Group) == 0 {
-			err = fmt.Errorf("the server couldn't identify a group kind for resource type \"%s\"", gvr.Resource)
+		if len(gvk.Group) == 0 {
+			err = fmt.Errorf("the server couldn't identify a group kind for resource type \"%s\"", gvk.Kind)
 		} else {
-			err = fmt.Errorf("the server couldn't identify a group kind for resource type \"%s\" in group \"%s\"", gvr.Resource, gvr.Group)
+			err = fmt.Errorf("the server couldn't identify a group kind for resource type \"%s\" in group \"%s\"", gvk.Kind, gvk.Group)
 		}
-		return ret, err
+		return nil, err
 	}
 	ret = mapping.Scope.Name()
 
-	return ret, nil
+	return &ret, nil
 }

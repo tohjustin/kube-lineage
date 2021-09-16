@@ -11,7 +11,7 @@ import (
 // of nodes.
 type NodeMap map[types.UID]*Node
 
-// Node represents a Kubernetes object.
+// Node represents a Kubernetes object in an owner-dependent relationship tree.
 type Node struct {
 	*unstructuredv1.Unstructured
 	UID             types.UID
