@@ -30,12 +30,12 @@ var (
 		{Name: "Status", Type: "string", Description: "The status of this object."},
 		{Name: "Age", Type: "string", Description: metav1.ObjectMeta{}.SwaggerDoc()["creationTimestamp"]},
 	}
-	// objectReasonJSONPath is the JSON path to get a Kubernetes object's "Ready"
-	// condition-type status.
-	objectReasonJSONPath *jsonpath.JSONPath
-	// objectStatusJSONPath is the JSON path to get a Kubernetes object's "Ready"
-	// condition-type reason.
-	objectStatusJSONPath *jsonpath.JSONPath
+	// objectReadyReasonJSONPath is the JSON path to get a Kubernetes object's
+	// "Ready" condition reason.
+	objectReadyReasonJSONPath = newJSONPath("status", "{.status.conditions[?(@.type==\"Ready\")].reason}")
+	// objectReadyStatusJSONPath is the JSON path to get a Kubernetes object's
+	// "Ready" condition status.
+	objectReadyStatusJSONPath = newJSONPath("status", "{.status.conditions[?(@.type==\"Ready\")].status}")
 )
 
 // NodeList represents an owner-dependent relationship tree stored as flat list
@@ -65,28 +65,14 @@ func (n NodeList) Swap(i, j int) {
 	n[i], n[j] = n[j], n[i]
 }
 
-func init() {
-	var err error
-	objectReasonJSONPath, err = newJSONPath("status", "{.status.conditions[?(@.type==\"Ready\")].reason}")
-	if err != nil {
-		err = fmt.Errorf("failed to initialize object reason JSON path: %w", err)
-		panic(err)
-	}
-	objectStatusJSONPath, err = newJSONPath("status", "{.status.conditions[?(@.type==\"Ready\")].status}")
-	if err != nil {
-		err = fmt.Errorf("failed to initialize object status JSON path: %w", err)
-		panic(err)
-	}
-}
-
 // newJSONPath returns a JSONPath object created from parsing the provided JSON
 // path expression.
-func newJSONPath(name, jsonPath string) (*jsonpath.JSONPath, error) {
+func newJSONPath(name, jsonPath string) *jsonpath.JSONPath {
 	jp := jsonpath.New(name).AllowMissingKeys(true)
 	if err := jp.Parse(jsonPath); err != nil {
-		return nil, err
+		panic(err)
 	}
-	return jp, nil
+	return jp
 }
 
 // getNestedString returns the field value of a Kubernetes object at the
@@ -107,19 +93,19 @@ func getNestedString(data map[string]interface{}, jp *jsonpath.JSONPath) (string
 	return str, nil
 }
 
-// getDefaultReadyStatus returns the ready & status value of a Kubernetes
-// object.
-func getDefaultReadyStatus(u *unstructuredv1.Unstructured) (ready string, status string, err error) {
+// getObjectReadyStatus returns the ready & status value of a Kubernetes object.
+func getObjectReadyStatus(u *unstructuredv1.Unstructured) (string, string, error) {
 	data := u.UnstructuredContent()
-	ready, err = getNestedString(data, objectStatusJSONPath)
+	ready, err := getNestedString(data, objectReadyStatusJSONPath)
 	if err != nil {
-		return
+		return "", "", err
 	}
-	status, err = getNestedString(data, objectReasonJSONPath)
+	status, err := getNestedString(data, objectReadyReasonJSONPath)
 	if err != nil {
-		return
+		return ready, "", err
 	}
-	return
+
+	return ready, status, nil
 }
 
 // getDaemonSetReadyStatus returns the ready & status value of a DaemonSet
@@ -329,7 +315,7 @@ func nodeToTableRow(node *Node, namePrefix string, showGroupFn func(kind string)
 	case node.Group == "apps" && node.Kind == "StatefulSet":
 		ready, status, _ = getStatefulSetReadyStatus(node.Unstructured)
 	default:
-		ready, status, _ = getDefaultReadyStatus(node.Unstructured)
+		ready, status, _ = getObjectReadyStatus(node.Unstructured)
 	}
 	if len(ready) == 0 {
 		ready = cellNotApplicable
