@@ -12,19 +12,22 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/duration"
 	"k8s.io/client-go/util/jsonpath"
+	"k8s.io/kubernetes/pkg/apis/apps"
+	"k8s.io/kubernetes/pkg/apis/core"
+	"k8s.io/kubernetes/pkg/util/node"
 )
 
 const (
-	cellUnknown = "<unknown>"
-	cellUnset   = "<none>"
+	cellUnknown       = "<unknown>"
+	cellNotApplicable = "-"
 )
 
 var (
 	// objectColumnDefinitions holds table column definition for Kubernetes objects.
 	objectColumnDefinitions = []metav1.TableColumnDefinition{
 		{Name: "Name", Type: "string", Format: "name", Description: metav1.ObjectMeta{}.SwaggerDoc()["name"]},
-		{Name: "Status", Type: "string", Description: "The condition Ready status of the object."},
-		{Name: "Reason", Type: "string", Description: "The condition Ready reason of the object."},
+		{Name: "Ready", Type: "string", Description: "The readiness state of this object."},
+		{Name: "Status", Type: "string", Description: "The status of this object."},
 		{Name: "Age", Type: "string", Description: metav1.ObjectMeta{}.SwaggerDoc()["creationTimestamp"]},
 	}
 	// objectReasonJSONPath is the JSON path to get a Kubernetes object's "Ready"
@@ -104,31 +107,241 @@ func getNestedString(data map[string]interface{}, jp *jsonpath.JSONPath) (string
 	return str, nil
 }
 
+// getDefaultReadyStatus returns the ready & status value of a Kubernetes
+// object.
+func getDefaultReadyStatus(u *unstructuredv1.Unstructured) (ready string, status string, err error) {
+	data := u.UnstructuredContent()
+	ready, err = getNestedString(data, objectStatusJSONPath)
+	if err != nil {
+		return
+	}
+	status, err = getNestedString(data, objectReasonJSONPath)
+	if err != nil {
+		return
+	}
+	return
+}
+
+// getDaemonSetReadyStatus returns the ready & status value of a DaemonSet
+// which is based off the table cell values computed by printDaemonSet from
+// https://github.com/kubernetes/kubernetes/blob/v1.22.1/pkg/printers/internalversion/printers.go.
+func getDaemonSetReadyStatus(u *unstructuredv1.Unstructured) (ready string, status string, err error) {
+	var ds apps.DaemonSet
+	err = runtime.DefaultUnstructuredConverter.FromUnstructured(u.UnstructuredContent(), &ds)
+	if err != nil {
+		return
+	}
+
+	desiredReplicas := ds.Status.DesiredNumberScheduled
+	readyReplicas := ds.Status.NumberReady
+	ready = fmt.Sprintf("%d/%d", int64(readyReplicas), int64(desiredReplicas))
+	return
+}
+
+// getDeploymentReadyStatus returns the ready & status value of a Deployment
+// which is based off the table cell values computed by printDeployment from
+// https://github.com/kubernetes/kubernetes/blob/v1.22.1/pkg/printers/internalversion/printers.go.
+func getDeploymentReadyStatus(u *unstructuredv1.Unstructured) (ready string, status string, err error) {
+	var deploy apps.Deployment
+	err = runtime.DefaultUnstructuredConverter.FromUnstructured(u.UnstructuredContent(), &deploy)
+	if err != nil {
+		return
+	}
+
+	desiredReplicas := deploy.Spec.Replicas
+	readyReplicas := deploy.Status.ReadyReplicas
+	ready = fmt.Sprintf("%d/%d", int64(readyReplicas), int64(desiredReplicas))
+	return
+}
+
+// getPodReadyStatus returns the ready & status value of a Pod which is based
+// off the table cell values computed by printPod from
+// https://github.com/kubernetes/kubernetes/blob/v1.22.1/pkg/printers/internalversion/printers.go.
+func getPodReadyStatus(u *unstructuredv1.Unstructured) (ready string, status string, err error) {
+	var pod core.Pod
+	err = runtime.DefaultUnstructuredConverter.FromUnstructured(u.UnstructuredContent(), &pod)
+	if err != nil {
+		return
+	}
+
+	restarts := 0
+	totalContainers := len(pod.Spec.Containers)
+	readyContainers := 0
+	lastRestartDate := metav1.NewTime(time.Time{})
+
+	reason := string(pod.Status.Phase)
+	if pod.Status.Reason != "" {
+		reason = pod.Status.Reason
+	}
+
+	initializing := false
+	for i := range pod.Status.InitContainerStatuses {
+		container := pod.Status.InitContainerStatuses[i]
+		restarts += int(container.RestartCount)
+		if container.LastTerminationState.Terminated != nil {
+			terminatedDate := container.LastTerminationState.Terminated.FinishedAt
+			if lastRestartDate.Before(&terminatedDate) {
+				lastRestartDate = terminatedDate
+			}
+		}
+		switch {
+		case container.State.Terminated != nil && container.State.Terminated.ExitCode == 0:
+			continue
+		case container.State.Terminated != nil:
+			// initialization is failed
+			if len(container.State.Terminated.Reason) == 0 {
+				if container.State.Terminated.Signal != 0 {
+					reason = fmt.Sprintf("Init:Signal:%d", container.State.Terminated.Signal)
+				} else {
+					reason = fmt.Sprintf("Init:ExitCode:%d", container.State.Terminated.ExitCode)
+				}
+			} else {
+				reason = "Init:" + container.State.Terminated.Reason
+			}
+			initializing = true
+		case container.State.Waiting != nil && len(container.State.Waiting.Reason) > 0 && container.State.Waiting.Reason != "PodInitializing":
+			reason = "Init:" + container.State.Waiting.Reason
+			initializing = true
+		default:
+			reason = fmt.Sprintf("Init:%d/%d", i, len(pod.Spec.InitContainers))
+			initializing = true
+		}
+		break
+	}
+	if !initializing {
+		restarts = 0
+		hasRunning := false
+		for i := len(pod.Status.ContainerStatuses) - 1; i >= 0; i-- {
+			container := pod.Status.ContainerStatuses[i]
+
+			restarts += int(container.RestartCount)
+			if container.LastTerminationState.Terminated != nil {
+				terminatedDate := container.LastTerminationState.Terminated.FinishedAt
+				if lastRestartDate.Before(&terminatedDate) {
+					lastRestartDate = terminatedDate
+				}
+			}
+			if container.State.Waiting != nil && container.State.Waiting.Reason != "" {
+				reason = container.State.Waiting.Reason
+			} else if container.State.Terminated != nil && container.State.Terminated.Reason != "" {
+				reason = container.State.Terminated.Reason
+			} else if container.State.Terminated != nil && container.State.Terminated.Reason == "" {
+				if container.State.Terminated.Signal != 0 {
+					reason = fmt.Sprintf("Signal:%d", container.State.Terminated.Signal)
+				} else {
+					reason = fmt.Sprintf("ExitCode:%d", container.State.Terminated.ExitCode)
+				}
+			} else if container.Ready && container.State.Running != nil {
+				hasRunning = true
+				readyContainers++
+			}
+		}
+
+		// change pod status back to "Running" if there is at least one container still reporting as "Running" status
+		if reason == "Completed" && hasRunning {
+			reason = "NotReady"
+			for _, condition := range pod.Status.Conditions {
+				if condition.Type == core.PodReady && condition.Status == core.ConditionTrue {
+					reason = "Running"
+				}
+			}
+		}
+	}
+
+	if pod.DeletionTimestamp != nil && pod.Status.Reason == node.NodeUnreachablePodReason {
+		reason = "Unknown"
+	} else if pod.DeletionTimestamp != nil {
+		reason = "Terminating"
+	}
+
+	return fmt.Sprintf("%d/%d", readyContainers, totalContainers), reason, nil
+}
+
+// getReplicaSetReadyStatus returns the ready & status value of a ReplicaSet
+// which is based off the table cell values computed by printReplicaSet from
+// https://github.com/kubernetes/kubernetes/blob/v1.22.1/pkg/printers/internalversion/printers.go.
+func getReplicaSetReadyStatus(u *unstructuredv1.Unstructured) (ready string, status string, err error) {
+	var rs apps.ReplicaSet
+	err = runtime.DefaultUnstructuredConverter.FromUnstructured(u.UnstructuredContent(), &rs)
+	if err != nil {
+		return
+	}
+
+	desiredReplicas := rs.Spec.Replicas
+	readyReplicas := rs.Status.ReadyReplicas
+	ready = fmt.Sprintf("%d/%d", int64(readyReplicas), int64(desiredReplicas))
+	return
+}
+
+// getReplicationControllerReadyStatus returns the ready & status value of a
+// ReplicationController which is based off the table cell values computed by
+// printReplicationController from
+// https://github.com/kubernetes/kubernetes/blob/v1.22.1/pkg/printers/internalversion/printers.go.
+func getReplicationControllerReadyStatus(u *unstructuredv1.Unstructured) (ready string, status string, err error) {
+	var rc core.ReplicationController
+	err = runtime.DefaultUnstructuredConverter.FromUnstructured(u.UnstructuredContent(), &rc)
+	if err != nil {
+		return
+	}
+
+	desiredReplicas := rc.Spec.Replicas
+	readyReplicas := rc.Status.ReadyReplicas
+	ready = fmt.Sprintf("%d/%d", int64(readyReplicas), int64(desiredReplicas))
+	return
+}
+
+// getStatefulSetReadyStatus returns the ready & status value of a StatefulSet
+// which is based off the table cell values computed by printStatefulSet from
+// https://github.com/kubernetes/kubernetes/blob/v1.22.1/pkg/printers/internalversion/printers.go.
+func getStatefulSetReadyStatus(u *unstructuredv1.Unstructured) (ready string, status string, err error) {
+	var sts apps.StatefulSet
+	err = runtime.DefaultUnstructuredConverter.FromUnstructured(u.UnstructuredContent(), &sts)
+	if err != nil {
+		return
+	}
+
+	desiredReplicas := sts.Spec.Replicas
+	readyReplicas := sts.Status.ReadyReplicas
+	ready = fmt.Sprintf("%d/%d", int64(readyReplicas), int64(desiredReplicas))
+	return
+}
+
 // nodeToTableRow converts the provided node into a table row.
 func nodeToTableRow(node *Node, namePrefix string, showGroupFn func(kind string) bool) metav1.TableRow {
-	var name string
+	var name, ready, status, age string
+
 	if showGroupFn(node.Kind) && len(node.Group) > 0 {
 		name = fmt.Sprintf("%s%s.%s/%s", namePrefix, node.Kind, node.Group, node.Name)
 	} else {
 		name = fmt.Sprintf("%s%s/%s", namePrefix, node.Kind, node.Name)
 	}
-	data := node.UnstructuredContent()
-	status, _ := getNestedString(data, objectStatusJSONPath)
-	if len(status) == 0 {
-		status = cellUnset
+	switch {
+	case node.Group == "" && node.Kind == "Pod":
+		ready, status, _ = getPodReadyStatus(node.Unstructured)
+	case node.Group == "" && node.Kind == "ReplicationController":
+		ready, status, _ = getReplicationControllerReadyStatus(node.Unstructured)
+	case node.Group == "apps" && node.Kind == "DaemonSet":
+		ready, status, _ = getDaemonSetReadyStatus(node.Unstructured)
+	case node.Group == "apps" && node.Kind == "Deployment":
+		ready, status, _ = getDeploymentReadyStatus(node.Unstructured)
+	case node.Group == "apps" && node.Kind == "ReplicaSet":
+		ready, status, _ = getReplicaSetReadyStatus(node.Unstructured)
+	case node.Group == "apps" && node.Kind == "StatefulSet":
+		ready, status, _ = getStatefulSetReadyStatus(node.Unstructured)
+	default:
+		ready, status, _ = getDefaultReadyStatus(node.Unstructured)
 	}
-	reason, _ := getNestedString(data, objectReasonJSONPath)
-	if len(reason) == 0 {
-		reason = cellUnset
+	if len(ready) == 0 {
+		ready = cellNotApplicable
 	}
-	age := translateTimestampSince(node.GetCreationTimestamp())
+	age = translateTimestampSince(node.GetCreationTimestamp())
 
 	return metav1.TableRow{
 		Object: runtime.RawExtension{Object: node.DeepCopyObject()},
 		Cells: []interface{}{
 			name,
+			ready,
 			status,
-			reason,
 			age,
 		},
 	}
