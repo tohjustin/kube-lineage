@@ -161,45 +161,40 @@ func getPodReadyStatus(u *unstructuredv1.Unstructured) (string, string, error) {
 	initializing := false
 	for i := range pod.Status.InitContainerStatuses {
 		container := pod.Status.InitContainerStatuses[i]
+		state := container.State
 		switch {
-		case container.State.Terminated != nil && container.State.Terminated.ExitCode == 0:
+		case state.Terminated != nil && state.Terminated.ExitCode == 0:
 			continue
-		case container.State.Terminated != nil:
-			// initialization is failed
-			if len(container.State.Terminated.Reason) == 0 {
-				if container.State.Terminated.Signal != 0 {
-					reason = fmt.Sprintf("Init:Signal:%d", container.State.Terminated.Signal)
-				} else {
-					reason = fmt.Sprintf("Init:ExitCode:%d", container.State.Terminated.ExitCode)
-				}
-			} else {
-				reason = "Init:" + container.State.Terminated.Reason
-			}
-			initializing = true
-		case container.State.Waiting != nil && len(container.State.Waiting.Reason) > 0 && container.State.Waiting.Reason != "PodInitializing":
-			reason = "Init:" + container.State.Waiting.Reason
-			initializing = true
+		case state.Terminated != nil && len(state.Terminated.Reason) > 0:
+			reason = state.Terminated.Reason
+		case state.Terminated != nil && len(state.Terminated.Reason) == 0 && state.Terminated.Signal != 0:
+			reason = fmt.Sprintf("Signal:%d", state.Terminated.Signal)
+		case state.Terminated != nil && len(state.Terminated.Reason) == 0 && state.Terminated.Signal == 0:
+			reason = fmt.Sprintf("ExitCode:%d", state.Terminated.ExitCode)
+		case state.Waiting != nil && len(state.Waiting.Reason) > 0 && state.Waiting.Reason != "PodInitializing":
+			reason = state.Waiting.Reason
 		default:
-			reason = fmt.Sprintf("Init:%d/%d", i, len(pod.Spec.InitContainers))
-			initializing = true
+			reason = fmt.Sprintf("%d/%d", i, len(pod.Spec.InitContainers))
 		}
+		reason = fmt.Sprintf("Init:%s", reason)
+		initializing = true
 		break
 	}
 	if !initializing {
 		hasRunning := false
 		for i := len(pod.Status.ContainerStatuses) - 1; i >= 0; i-- {
 			container := pod.Status.ContainerStatuses[i]
-			if container.State.Waiting != nil && container.State.Waiting.Reason != "" {
-				reason = container.State.Waiting.Reason
-			} else if container.State.Terminated != nil && container.State.Terminated.Reason != "" {
-				reason = container.State.Terminated.Reason
-			} else if container.State.Terminated != nil && container.State.Terminated.Reason == "" {
-				if container.State.Terminated.Signal != 0 {
-					reason = fmt.Sprintf("Signal:%d", container.State.Terminated.Signal)
-				} else {
-					reason = fmt.Sprintf("ExitCode:%d", container.State.Terminated.ExitCode)
-				}
-			} else if container.Ready && container.State.Running != nil {
+			state := container.State
+			switch {
+			case state.Terminated != nil && len(state.Terminated.Reason) > 0:
+				reason = state.Terminated.Reason
+			case state.Terminated != nil && len(state.Terminated.Reason) == 0 && state.Terminated.Signal != 0:
+				reason = fmt.Sprintf("Signal:%d", state.Terminated.Signal)
+			case state.Terminated != nil && len(state.Terminated.Reason) == 0 && state.Terminated.Signal == 0:
+				reason = fmt.Sprintf("ExitCode:%d", state.Terminated.ExitCode)
+			case state.Waiting != nil && len(state.Waiting.Reason) > 0:
+				reason = state.Waiting.Reason
+			case state.Running != nil && container.Ready:
 				hasRunning = true
 				readyContainers++
 			}
@@ -214,10 +209,12 @@ func getPodReadyStatus(u *unstructuredv1.Unstructured) (string, string, error) {
 			}
 		}
 	}
-	if pod.DeletionTimestamp != nil && pod.Status.Reason == node.NodeUnreachablePodReason {
-		reason = "Unknown"
-	} else if pod.DeletionTimestamp != nil {
-		reason = "Terminating"
+	if pod.DeletionTimestamp != nil {
+		if pod.Status.Reason == node.NodeUnreachablePodReason {
+			reason = "Unknown"
+		} else {
+			reason = "Terminating"
+		}
 	}
 	ready := fmt.Sprintf("%d/%d", readyContainers, totalContainers)
 
