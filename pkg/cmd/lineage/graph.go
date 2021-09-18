@@ -25,7 +25,7 @@ type Node struct {
 
 // resolveDependents resolves all dependents of the provided root object and
 // returns an owner-dependent relationship tree.
-func resolveDependents(objects []unstructuredv1.Unstructured, rootUID types.UID) (NodeMap, error) {
+func resolveDependents(objects []unstructuredv1.Unstructured, rootUID types.UID) NodeMap {
 	// Create global node map of all objects
 	globalMap := NodeMap{}
 	for ix, o := range objects {
@@ -85,5 +85,5 @@ func resolveDependents(objects []unstructuredv1.Unstructured, rootUID types.UID)
 	}
 
 	klog.V(4).Infof("Resolved %d dependents for root object (uid: %s)", len(nodeMap)-1, rootUID)
-	return nodeMap, nil
+	return nodeMap
 }

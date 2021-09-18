@@ -111,65 +111,56 @@ func getObjectReadyStatus(u *unstructuredv1.Unstructured) (string, string, error
 // getDaemonSetReadyStatus returns the ready & status value of a DaemonSet
 // which is based off the table cell values computed by printDaemonSet from
 // https://github.com/kubernetes/kubernetes/blob/v1.22.1/pkg/printers/internalversion/printers.go.
-func getDaemonSetReadyStatus(u *unstructuredv1.Unstructured) (ready string, status string, err error) {
+//nolint:unparam
+func getDaemonSetReadyStatus(u *unstructuredv1.Unstructured) (string, string, error) {
 	var ds apps.DaemonSet
-	err = runtime.DefaultUnstructuredConverter.FromUnstructured(u.UnstructuredContent(), &ds)
+	err := runtime.DefaultUnstructuredConverter.FromUnstructured(u.UnstructuredContent(), &ds)
 	if err != nil {
-		return
+		return "", "", err
 	}
-
 	desiredReplicas := ds.Status.DesiredNumberScheduled
 	readyReplicas := ds.Status.NumberReady
-	ready = fmt.Sprintf("%d/%d", int64(readyReplicas), int64(desiredReplicas))
-	return
+	ready := fmt.Sprintf("%d/%d", int64(readyReplicas), int64(desiredReplicas))
+
+	return ready, "", nil
 }
 
 // getDeploymentReadyStatus returns the ready & status value of a Deployment
 // which is based off the table cell values computed by printDeployment from
 // https://github.com/kubernetes/kubernetes/blob/v1.22.1/pkg/printers/internalversion/printers.go.
-func getDeploymentReadyStatus(u *unstructuredv1.Unstructured) (ready string, status string, err error) {
+//nolint:unparam
+func getDeploymentReadyStatus(u *unstructuredv1.Unstructured) (string, string, error) {
 	var deploy apps.Deployment
-	err = runtime.DefaultUnstructuredConverter.FromUnstructured(u.UnstructuredContent(), &deploy)
+	err := runtime.DefaultUnstructuredConverter.FromUnstructured(u.UnstructuredContent(), &deploy)
 	if err != nil {
-		return
+		return "", "", err
 	}
-
 	desiredReplicas := deploy.Spec.Replicas
 	readyReplicas := deploy.Status.ReadyReplicas
-	ready = fmt.Sprintf("%d/%d", int64(readyReplicas), int64(desiredReplicas))
-	return
+	ready := fmt.Sprintf("%d/%d", int64(readyReplicas), int64(desiredReplicas))
+
+	return ready, "", nil
 }
 
 // getPodReadyStatus returns the ready & status value of a Pod which is based
 // off the table cell values computed by printPod from
 // https://github.com/kubernetes/kubernetes/blob/v1.22.1/pkg/printers/internalversion/printers.go.
-func getPodReadyStatus(u *unstructuredv1.Unstructured) (ready string, status string, err error) {
+//nolint:funlen,gocognit,gocyclo
+func getPodReadyStatus(u *unstructuredv1.Unstructured) (string, string, error) {
 	var pod core.Pod
-	err = runtime.DefaultUnstructuredConverter.FromUnstructured(u.UnstructuredContent(), &pod)
+	err := runtime.DefaultUnstructuredConverter.FromUnstructured(u.UnstructuredContent(), &pod)
 	if err != nil {
-		return
+		return "", "", err
 	}
-
-	restarts := 0
 	totalContainers := len(pod.Spec.Containers)
 	readyContainers := 0
-	lastRestartDate := metav1.NewTime(time.Time{})
-
 	reason := string(pod.Status.Phase)
-	if pod.Status.Reason != "" {
+	if len(pod.Status.Reason) > 0 {
 		reason = pod.Status.Reason
 	}
-
 	initializing := false
 	for i := range pod.Status.InitContainerStatuses {
 		container := pod.Status.InitContainerStatuses[i]
-		restarts += int(container.RestartCount)
-		if container.LastTerminationState.Terminated != nil {
-			terminatedDate := container.LastTerminationState.Terminated.FinishedAt
-			if lastRestartDate.Before(&terminatedDate) {
-				lastRestartDate = terminatedDate
-			}
-		}
 		switch {
 		case container.State.Terminated != nil && container.State.Terminated.ExitCode == 0:
 			continue
@@ -195,18 +186,9 @@ func getPodReadyStatus(u *unstructuredv1.Unstructured) (ready string, status str
 		break
 	}
 	if !initializing {
-		restarts = 0
 		hasRunning := false
 		for i := len(pod.Status.ContainerStatuses) - 1; i >= 0; i-- {
 			container := pod.Status.ContainerStatuses[i]
-
-			restarts += int(container.RestartCount)
-			if container.LastTerminationState.Terminated != nil {
-				terminatedDate := container.LastTerminationState.Terminated.FinishedAt
-				if lastRestartDate.Before(&terminatedDate) {
-					lastRestartDate = terminatedDate
-				}
-			}
 			if container.State.Waiting != nil && container.State.Waiting.Reason != "" {
 				reason = container.State.Waiting.Reason
 			} else if container.State.Terminated != nil && container.State.Terminated.Reason != "" {
@@ -222,7 +204,6 @@ func getPodReadyStatus(u *unstructuredv1.Unstructured) (ready string, status str
 				readyContainers++
 			}
 		}
-
 		// change pod status back to "Running" if there is at least one container still reporting as "Running" status
 		if reason == "Completed" && hasRunning {
 			reason = "NotReady"
@@ -233,66 +214,70 @@ func getPodReadyStatus(u *unstructuredv1.Unstructured) (ready string, status str
 			}
 		}
 	}
-
 	if pod.DeletionTimestamp != nil && pod.Status.Reason == node.NodeUnreachablePodReason {
 		reason = "Unknown"
 	} else if pod.DeletionTimestamp != nil {
 		reason = "Terminating"
 	}
+	ready := fmt.Sprintf("%d/%d", readyContainers, totalContainers)
 
-	return fmt.Sprintf("%d/%d", readyContainers, totalContainers), reason, nil
+	return ready, reason, nil
 }
 
 // getReplicaSetReadyStatus returns the ready & status value of a ReplicaSet
 // which is based off the table cell values computed by printReplicaSet from
 // https://github.com/kubernetes/kubernetes/blob/v1.22.1/pkg/printers/internalversion/printers.go.
-func getReplicaSetReadyStatus(u *unstructuredv1.Unstructured) (ready string, status string, err error) {
+//nolint:unparam
+func getReplicaSetReadyStatus(u *unstructuredv1.Unstructured) (string, string, error) {
 	var rs apps.ReplicaSet
-	err = runtime.DefaultUnstructuredConverter.FromUnstructured(u.UnstructuredContent(), &rs)
+	err := runtime.DefaultUnstructuredConverter.FromUnstructured(u.UnstructuredContent(), &rs)
 	if err != nil {
-		return
+		return "", "", err
 	}
-
 	desiredReplicas := rs.Spec.Replicas
 	readyReplicas := rs.Status.ReadyReplicas
-	ready = fmt.Sprintf("%d/%d", int64(readyReplicas), int64(desiredReplicas))
-	return
+	ready := fmt.Sprintf("%d/%d", int64(readyReplicas), int64(desiredReplicas))
+
+	return ready, "", nil
 }
 
 // getReplicationControllerReadyStatus returns the ready & status value of a
 // ReplicationController which is based off the table cell values computed by
 // printReplicationController from
 // https://github.com/kubernetes/kubernetes/blob/v1.22.1/pkg/printers/internalversion/printers.go.
-func getReplicationControllerReadyStatus(u *unstructuredv1.Unstructured) (ready string, status string, err error) {
+//nolint:unparam
+func getReplicationControllerReadyStatus(u *unstructuredv1.Unstructured) (string, string, error) {
 	var rc core.ReplicationController
-	err = runtime.DefaultUnstructuredConverter.FromUnstructured(u.UnstructuredContent(), &rc)
+	err := runtime.DefaultUnstructuredConverter.FromUnstructured(u.UnstructuredContent(), &rc)
 	if err != nil {
-		return
+		return "", "", err
 	}
-
 	desiredReplicas := rc.Spec.Replicas
 	readyReplicas := rc.Status.ReadyReplicas
-	ready = fmt.Sprintf("%d/%d", int64(readyReplicas), int64(desiredReplicas))
-	return
+	ready := fmt.Sprintf("%d/%d", int64(readyReplicas), int64(desiredReplicas))
+
+	return ready, "", nil
 }
 
 // getStatefulSetReadyStatus returns the ready & status value of a StatefulSet
 // which is based off the table cell values computed by printStatefulSet from
 // https://github.com/kubernetes/kubernetes/blob/v1.22.1/pkg/printers/internalversion/printers.go.
-func getStatefulSetReadyStatus(u *unstructuredv1.Unstructured) (ready string, status string, err error) {
+//nolint:unparam
+func getStatefulSetReadyStatus(u *unstructuredv1.Unstructured) (string, string, error) {
 	var sts apps.StatefulSet
-	err = runtime.DefaultUnstructuredConverter.FromUnstructured(u.UnstructuredContent(), &sts)
+	err := runtime.DefaultUnstructuredConverter.FromUnstructured(u.UnstructuredContent(), &sts)
 	if err != nil {
-		return
+		return "", "", err
 	}
-
 	desiredReplicas := sts.Spec.Replicas
 	readyReplicas := sts.Status.ReadyReplicas
-	ready = fmt.Sprintf("%d/%d", int64(readyReplicas), int64(desiredReplicas))
-	return
+	ready := fmt.Sprintf("%d/%d", int64(readyReplicas), int64(desiredReplicas))
+
+	return ready, "", nil
 }
 
 // nodeToTableRow converts the provided node into a table row.
+//nolint:goconst
 func nodeToTableRow(node *Node, namePrefix string, showGroupFn func(kind string) bool) metav1.TableRow {
 	var name, ready, status, age string
 
@@ -387,14 +372,13 @@ func printNodeDependents(
 	prefix string,
 	sortUIDsFn func(uids []types.UID) []types.UID,
 	showGroupFn func(kind string) bool) ([]metav1.TableRow, error) {
-	var rows []metav1.TableRow
+	rows := make([]metav1.TableRow, 0, len(nodeMap))
 
 	// Guard against possible cyclic dependency
 	if _, ok := uidSet[node.UID]; ok {
 		return rows, nil
-	} else {
-		uidSet[node.UID] = struct{}{}
 	}
+	uidSet[node.UID] = struct{}{}
 
 	dependents := sortUIDsFn(node.Dependents)
 	lastIx := len(dependents) - 1
@@ -408,7 +392,7 @@ func printNodeDependents(
 
 		child, ok := nodeMap[childUID]
 		if !ok {
-			return nil, fmt.Errorf("Dependent object (uid: %s) not found in list of fetched objects", childUID)
+			return nil, fmt.Errorf("dependent object (uid: %s) not found in list of fetched objects", childUID)
 		}
 		row := nodeToTableRow(child, childPrefix, showGroupFn)
 		dependentRows, err := printNodeDependents(nodeMap, uidSet, child, dependentPrefix, sortUIDsFn, showGroupFn)

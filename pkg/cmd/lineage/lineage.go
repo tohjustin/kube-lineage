@@ -2,7 +2,6 @@ package lineage
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -32,7 +31,6 @@ var (
 
 		TYPE is a Kubernetes resource. Shortcuts and groups will be resolved.
 		NAME is the name of a particular Kubernetes resource.`)
-
 	cmdExample = templates.Examples(`
 		# List all dependents of the deployment named "bar" in the current namespace
 		kubectl lineage deployments bar
@@ -139,13 +137,14 @@ func New(streams genericclioptions.IOStreams) *cobra.Command {
 }
 
 // Complete completes all the required options for command.
+//nolint:funlen
 func (o *CmdOptions) Complete(cmd *cobra.Command, args []string) error {
 	var resourceType, resourceName string
 	switch len(args) {
 	case 1:
 		resourceTokens := strings.SplitN(args[0], "/", 2)
 		if len(resourceTokens) != 2 {
-			return errors.New("you must specify one or two arguments: resource or resource & resourceName")
+			return fmt.Errorf("you must specify one or two arguments: resource or resource & resourceName")
 		}
 		resourceType = resourceTokens[0]
 		resourceName = resourceTokens[1]
@@ -153,7 +152,7 @@ func (o *CmdOptions) Complete(cmd *cobra.Command, args []string) error {
 		resourceType = args[0]
 		resourceName = args[1]
 	default:
-		return errors.New("you must specify one or two arguments: resource or resource & resourceName")
+		return fmt.Errorf("you must specify one or two arguments: resource or resource & resourceName")
 	}
 	restMapper, err := o.ConfigFlags.ToRESTMapper()
 	if err != nil {
@@ -228,11 +227,11 @@ func (o *CmdOptions) Validate() error {
 	if len(o.RequestObject.Name) == 0 ||
 		o.RequestObject.GroupVersionResource().Empty() ||
 		o.RequestObject.GroupVersionKind().Empty() {
-		return errors.New("resource TYPE/NAME must be specified")
+		return fmt.Errorf("resource TYPE/NAME must be specified")
 	}
 
 	if o.ClientConfig == nil || o.DynamicClient == nil {
-		return errors.New("client config, client must be provided")
+		return fmt.Errorf("client config, client must be provided")
 	}
 
 	klog.V(4).Infof("Version: %s", getVersion())
@@ -286,18 +285,10 @@ func (o *CmdOptions) Run() error {
 	objects = append(objects, *rootObject)
 
 	// Find all dependents of the root object
-	nodeMap, err := resolveDependents(objects, rootUID)
-	if err != nil {
-		return err
-	}
+	nodeMap := resolveDependents(objects, rootUID)
 
 	// Print output
-	err = o.print(nodeMap, rootUID)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return o.printObj(nodeMap, rootUID)
 }
 
 // getAPIResources fetches & returns all API resources that exists on the
@@ -447,11 +438,11 @@ list_objects:
 	return result, nil
 }
 
-// print outputs the root object & its dependents in table format.
-func (o *CmdOptions) print(nodeMap NodeMap, rootUID types.UID) error {
+// printObj prints the root object & its dependents in table format.
+func (o *CmdOptions) printObj(nodeMap NodeMap, rootUID types.UID) error {
 	root, ok := nodeMap[rootUID]
 	if !ok {
-		return fmt.Errorf("Requested object (uid: %s) not found in list of fetched objects", rootUID)
+		return fmt.Errorf("requested object (uid: %s) not found in list of fetched objects", rootUID)
 	}
 
 	// Setup Table Printer
@@ -483,11 +474,8 @@ func (o *CmdOptions) print(nodeMap NodeMap, rootUID types.UID) error {
 		ColumnDefinitions: objectColumnDefinitions,
 		Rows:              rows,
 	}
-	if err = printer.PrintObj(table, o.Out); err != nil {
-		return err
-	}
 
-	return nil
+	return printer.PrintObj(table, o.Out)
 }
 
 // resourceFor returns the GroupVersionResource & GroupVersionKind that matches

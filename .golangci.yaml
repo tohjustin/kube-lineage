@@ -1,0 +1,42 @@
+run:
+  deadline: 1m
+linters:
+  enable-all: true
+  disable:
+    - golint           # deprecated
+    - interfacer       # deprecated
+    - maligned         # deprecated
+    - scopelint        # deprecated
+    - cyclop           # duplicate of gocyclo
+    - rowserrcheck     # exclude 'sql' preset
+    - sqlclosecheck    # exclude 'sql' preset
+    - exhaustivestruct
+    - gochecknoglobals
+    - goerr113
+    - gomnd
+    - gomoddirectives
+    - lll
+    - nlreturn
+    - prealloc
+    - wrapcheck
+    - wsl
+linters-settings:
+  depguard:
+    list-type: blacklist
+    include-go-root: true
+    packages:
+      - errors
+      - io/ioutil
+      - sync/atomic
+      - github.com/pkg/errors
+      - github.com/stretchr/testify/assert
+      - gotest.tools/v3
+    packages-with-error-message:
+      - errors: "Use github.com/cockroachdb/errors instead."
+      - io/ioutil: "The 'io/ioutil' package is deprecated. Use corresponding 'os' or 'io' functions instead."
+      - sync/atomic: "Use go.uber.org/atomic instead."
+      - github.com/pkg/errors: "Use github.com/cockroachdb/errors instead."
+      - github.com/stretchr/testify/assert: "Use github.com/stretchr/testify/require instead."
+      - gotest.tools/v3: "Use github.com/stretchr/testify instead."
+  gci:
+    local-prefixes: github.com/tohjustin/kube-lineage

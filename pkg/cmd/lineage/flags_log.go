@@ -7,7 +7,7 @@ import (
 	"k8s.io/klog/v2"
 )
 
-// addLogFlags adds flags for logging
+// addLogFlags adds flags for logging.
 func addLogFlags(flags *pflag.FlagSet) {
 	klogFlagSet := goflag.NewFlagSet("klog", goflag.ContinueOnError)
 	klog.InitFlags(klogFlagSet)
