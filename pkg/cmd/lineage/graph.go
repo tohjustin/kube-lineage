@@ -7,8 +7,8 @@ import (
 	"k8s.io/klog/v2"
 )
 
-// NodeMap represents an owner-dependent relationship tree stored as flat list
-// of nodes.
+// NodeMap represents an owner-dependent relationship tree stored as a map of
+// nodes.
 type NodeMap map[types.UID]*Node
 
 // Node represents a Kubernetes object in an owner-dependent relationship tree.

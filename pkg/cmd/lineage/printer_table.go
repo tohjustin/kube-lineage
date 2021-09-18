@@ -35,9 +35,13 @@ var (
 	objectStatusJSONPath *jsonpath.JSONPath
 )
 
+// NodeList represents an owner-dependent relationship tree stored as flat list
+// of nodes.
 type NodeList []*Node
 
-func (n NodeList) Len() int { return len(n) }
+func (n NodeList) Len() int {
+	return len(n)
+}
 
 func (n NodeList) Less(i, j int) bool {
 	// Sort nodes in following order: Namespace, Kind, Group, Name
@@ -54,7 +58,9 @@ func (n NodeList) Less(i, j int) bool {
 	return a.Name < b.Name
 }
 
-func (n NodeList) Swap(i, j int) { n[i], n[j] = n[j], n[i] }
+func (n NodeList) Swap(i, j int) {
+	n[i], n[j] = n[j], n[i]
+}
 
 func init() {
 	var err error
@@ -67,6 +73,64 @@ func init() {
 	if err != nil {
 		err = fmt.Errorf("failed to initialize object status JSON path: %w", err)
 		panic(err)
+	}
+}
+
+// newJSONPath returns a JSONPath object created from parsing the provided JSON
+// path expression.
+func newJSONPath(name, jsonPath string) (*jsonpath.JSONPath, error) {
+	jp := jsonpath.New(name).AllowMissingKeys(true)
+	if err := jp.Parse(jsonPath); err != nil {
+		return nil, err
+	}
+	return jp, nil
+}
+
+// getNestedString returns the field value of a Kubernetes object at the
+// provided JSON path.
+func getNestedString(data map[string]interface{}, jp *jsonpath.JSONPath) (string, error) {
+	values, err := jp.FindResults(data)
+	if err != nil {
+		return "", err
+	}
+	strValues := []string{}
+	for arrIx := range values {
+		for valIx := range values[arrIx] {
+			strValues = append(strValues, fmt.Sprintf("%v", values[arrIx][valIx].Interface()))
+		}
+	}
+	str := strings.Join(strValues, ",")
+
+	return str, nil
+}
+
+// nodeToTableRow converts the provided node into a table row.
+func nodeToTableRow(node *Node, namePrefix string, showGroupFn func(kind string) bool) metav1.TableRow {
+	var name string
+	if showGroupFn(node.Kind) && len(node.Group) > 0 {
+		name = fmt.Sprintf("%s%s.%s/%s", namePrefix, node.Kind, node.Group, node.Name)
+	} else {
+		name = fmt.Sprintf("%s%s/%s", namePrefix, node.Kind, node.Name)
+	}
+	data := node.UnstructuredContent()
+	status, _ := getNestedString(data, objectStatusJSONPath)
+	if len(status) == 0 {
+		status = cellUnset
+	}
+	reason, _ := getNestedString(data, objectReasonJSONPath)
+	if len(reason) == 0 {
+		reason = cellUnset
+	}
+	age := translateTimestampSince(node.GetCreationTimestamp())
+
+	return metav1.TableRow{
+		Object: runtime.RawExtension{Object: node.DeepCopyObject()},
+		Cells: []interface{}{
+			name,
+			status,
+			reason,
+			age,
+		},
 	}
 }
 
@@ -157,64 +221,6 @@ func printNodeDependents(
 	}
 
 	return rows, nil
-}
-
-// nodeToTableRow converts the provided node into a table row.
-func nodeToTableRow(node *Node, namePrefix string, showGroupFn func(kind string) bool) metav1.TableRow {
-	var name string
-	if showGroupFn(node.Kind) && len(node.Group) > 0 {
-		name = fmt.Sprintf("%s%s.%s/%s", namePrefix, node.Kind, node.Group, node.Name)
-	} else {
-		name = fmt.Sprintf("%s%s/%s", namePrefix, node.Kind, node.Name)
-	}
-	status, _ := getNestedString(*node.Unstructured, objectStatusJSONPath)
-	if len(status) == 0 {
-		status = cellUnset
-	}
-	reason, _ := getNestedString(*node.Unstructured, objectReasonJSONPath)
-	if len(reason) == 0 {
-		reason = cellUnset
-	}
-	age := translateTimestampSince(node.GetCreationTimestamp())
-
-	return metav1.TableRow{
-		Object: runtime.RawExtension{Object: node.DeepCopyObject()},
-		Cells: []interface{}{
-			name,
-			status,
-			reason,
-			age,
-		},
-	}
-}
-
-// newJSONPath returns a JSONPath object created from parsing the provided JSON
-// path expression.
-func newJSONPath(name, jsonPath string) (*jsonpath.JSONPath, error) {
-	jp := jsonpath.New(name).AllowMissingKeys(true)
-	if err := jp.Parse(jsonPath); err != nil {
-		return nil, err
-	}
-	return jp, nil
-}
-
-// getNestedString returns the field value of a Kubernetes object at the
-// provided JSON path.
-func getNestedString(u unstructuredv1.Unstructured, jp *jsonpath.JSONPath) (string, error) {
-	data := u.UnstructuredContent()
-	values, err := jp.FindResults(data)
-	if err != nil {
-		return "", err
-	}
-	strValues := []string{}
-	for arrIx := range values {
-		for valIx := range values[arrIx] {
-			strValues = append(strValues, fmt.Sprintf("%v", values[arrIx][valIx].Interface()))
-		}
-	}
-	str := strings.Join(strValues, ",")
-
-	return str, nil
 }
 
 // translateTimestampSince returns the elapsed time since timestamp in
