@@ -1,1 +1,1 @@
-# kube-lineage
+# kubectl-lineage

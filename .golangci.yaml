@@ -39,4 +39,4 @@ linters-settings:
       - github.com/stretchr/testify/assert: "Use github.com/stretchr/testify/require instead."
       - gotest.tools/v3: "Use github.com/stretchr/testify instead."
   gci:
-    local-prefixes: github.com/tohjustin/kube-lineage
+    local-prefixes: github.com/tohjustin/kubectl-lineage

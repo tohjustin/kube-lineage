@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/tohjustin/kube-lineage/internal/version"
+	"github.com/tohjustin/kubectl-lineage/internal/version"
 )
 
 func getVersion() string {
