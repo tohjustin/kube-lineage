@@ -11,6 +11,12 @@
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out
 
+# Output of the GoReleaser tool
+dist/
+
+# Binaries for make targets, downloaded via fetch.sh script
+bin/
+
 # GoLand IDEA
 /.idea/
 *.iml
@@ -25,6 +31,3 @@
 # Miscellaneous files
 *.sw[op]
 *.DS_Store
-
-# Dependency directories (remove the comment below to include it)
-# vendor/

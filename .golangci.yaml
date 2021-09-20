@@ -1,5 +1,5 @@
 run:
-  deadline: 1m
+  deadline: 5m
 linters:
   enable-all: true
   disable:

@@ -1,0 +1,48 @@
+project_name: kubectl-lineage
+before:
+  hooks:
+    - go mod tidy
+builds:
+  - binary: kubectl-lineage
+    main: ./cmd/kubectl-lineage
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -s -w
+      - -X github.com/tohjustin/kubectl-lineage/internal/version.gitMajor={{ .Env.GIT_VERSION_MAJOR }}
+      - -X github.com/tohjustin/kubectl-lineage/internal/version.gitMinor={{ .Env.GIT_VERSION_MINOR }}
+      - -X github.com/tohjustin/kubectl-lineage/internal/version.gitVersion={{ .Env.GIT_VERSION }}
+      - -X github.com/tohjustin/kubectl-lineage/internal/version.gitCommit={{ .Env.GIT_COMMIT }}
+      - -X github.com/tohjustin/kubectl-lineage/internal/version.gitTreeState={{ .Env.GIT_TREE_STATE }}
+      - -X github.com/tohjustin/kubectl-lineage/internal/version.buildDate={{ .Env.BUILD_DATE }}
+archives:
+  - files:
+      - LICENSE.md
+      - README.md
+    format_overrides:
+      - goos: windows
+        format: zip
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    wrap_in_directory: false
+checksum:
+  name_template: "checksums.txt"
+snapshot:
+  name_template: "{{ .Tag }}-next"
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^chore:"
+      - "^docs:"
+      - "^refactor:"
+      - "^test:"
