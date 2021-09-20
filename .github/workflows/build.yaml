@@ -1,7 +1,7 @@
 # This workflow is triggered on push or pull request for the master branch.
 # It runs tests and various checks to validate that the proposed changes
 # will not introduce any regression after merging the code to the master branch.
-name: Build
+name: build
 on:
   push:
     branches:

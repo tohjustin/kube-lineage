@@ -1,7 +1,7 @@
 # This workflow is triggered on new tags.
 # It runs tests to validate that the code is working before publishing a new
 # version for plugin "lineage" in krew-index.
-name: Release
+name: release
 on:
   push:
     tags:
