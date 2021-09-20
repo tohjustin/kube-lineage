@@ -6,12 +6,12 @@ import (
 )
 
 var (
-	gitMajor     string // major version, always numeric
-	gitMinor     string // minor version, numeric possibly followed by "+"
-	gitVersion   string // semantic version, derived by build scripts
-	gitCommit    string // sha1 from git, output of $(git rev-parse HEAD)
-	gitTreeState string // state of git tree, either "clean" or "dirty"
-	buildDate    string // build date in ISO8601 format, output of $(date -u +'%Y-%m-%dT%H:%M:%SZ')
+	gitVersion      string // semantic version, derived by build scripts
+	gitVersionMajor string // major version, always numeric
+	gitVersionMinor string // minor version, always numeric
+	gitCommit       string // sha1 from git, output of $(git rev-parse HEAD)
+	gitTreeState    string // state of git tree, either "clean" or "dirty"
+	buildDate       string // build date in rfc3339 format, output of $(date -u +'%Y-%m-%dT%H:%M:%SZ')
 )
 
 // Info defines the version.
@@ -30,8 +30,8 @@ type Info struct {
 // Get returns metadata and information regarding the version.
 func Get() Info {
 	return Info{
-		Major:        gitMajor,
-		Minor:        gitMinor,
+		Major:        gitVersionMajor,
+		Minor:        gitVersionMinor,
 		GitVersion:   gitVersion,
 		GitCommit:    gitCommit,
 		GitTreeState: gitTreeState,
