@@ -47,12 +47,14 @@ type Node struct {
 type NodeMap map[types.UID]*Node
 
 const (
-	RelationshipOwnerRef Relationship = "OwnerReference"
+	// Kubernetes Owner-Dependent relationships.
+	RelationshipControllerRef Relationship = "ControllerReference"
+	RelationshipOwnerRef      Relationship = "OwnerReference"
 )
 
 // resolveDependents resolves all dependents of the provided root object and
 // returns a relationship tree.
-//nolint:funlen
+//nolint:funlen,gocognit
 func resolveDependents(objects []unstructuredv1.Unstructured, rootUID types.UID) NodeMap {
 	// Create global node map of all objects
 	globalMap := NodeMap{}
@@ -74,7 +76,12 @@ func resolveDependents(objects []unstructuredv1.Unstructured, rootUID types.UID)
 				if _, ok := owner.Dependents[uid]; !ok {
 					owner.Dependents[uid] = RelationshipSet{}
 				}
-				owner.Dependents[uid][RelationshipOwnerRef] = struct{}{}
+				if ref.Controller != nil && *ref.Controller {
+					owner.Dependents[uid][RelationshipControllerRef] = struct{}{}
+					owner.Dependents[uid][RelationshipOwnerRef] = struct{}{}
+				} else {
+					owner.Dependents[uid][RelationshipOwnerRef] = struct{}{}
+				}
 			}
 		}
 	}

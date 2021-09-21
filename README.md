@@ -32,7 +32,7 @@ DaemonSet.apps/svclb-traefik                           1/1               30m
 List of supported relationships used for discovering dependent objects:
 
 - Kubernetes
-  - [Owner References](https://kubernetes.io/docs/concepts/overview/working-with-objects/owners-dependents/)
+  - [Controller References](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/api-machinery/controller-ref.md) & [Owner References](https://kubernetes.io/docs/concepts/overview/working-with-objects/owners-dependents/)
 - Helm (Coming Soon)
 
 ## Installation
