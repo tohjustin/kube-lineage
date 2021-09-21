@@ -29,6 +29,7 @@ var (
 		{Name: "Ready", Type: "string", Description: "The readiness state of this object."},
 		{Name: "Status", Type: "string", Description: "The status of this object."},
 		{Name: "Age", Type: "string", Description: metav1.ObjectMeta{}.SwaggerDoc()["creationTimestamp"]},
+		{Name: "Relationships", Type: "array", Description: "The relationships this object has with its parent.", Priority: -1},
 	}
 	// objectReadyReasonJSONPath is the JSON path to get a Kubernetes object's
 	// "Ready" condition reason.
@@ -38,8 +39,7 @@ var (
 	objectReadyStatusJSONPath = newJSONPath("status", "{.status.conditions[?(@.type==\"Ready\")].status}")
 )
 
-// NodeList represents an owner-dependent relationship tree stored as flat list
-// of nodes.
+// NodeList contains a list of nodes.
 type NodeList []*Node
 
 func (n NodeList) Len() int {
@@ -275,8 +275,9 @@ func getStatefulSetReadyStatus(u *unstructuredv1.Unstructured) (string, string, 
 
 // nodeToTableRow converts the provided node into a table row.
 //nolint:goconst
-func nodeToTableRow(node *Node, namePrefix string, showGroupFn func(kind string) bool) metav1.TableRow {
+func nodeToTableRow(node *Node, rset RelationshipSet, namePrefix string, showGroupFn func(kind string) bool) metav1.TableRow {
 	var name, ready, status, age string
+	var relationships interface{}
 
 	if showGroupFn(node.Kind) && len(node.Group) > 0 {
 		name = fmt.Sprintf("%s%s.%s/%s", namePrefix, node.Kind, node.Group, node.Name)
@@ -303,6 +304,11 @@ func nodeToTableRow(node *Node, namePrefix string, showGroupFn func(kind string)
 		ready = cellNotApplicable
 	}
 	age = translateTimestampSince(node.GetCreationTimestamp())
+	if r := rset.List(); len(r) > 0 {
+		relationships = r
+	} else {
+		relationships = cellNotApplicable
+	}
 
 	return metav1.TableRow{
 		Object: runtime.RawExtension{Object: node.DeepCopyObject()},
@@ -311,6 +317,7 @@ func nodeToTableRow(node *Node, namePrefix string, showGroupFn func(kind string)
 			ready,
 			status,
 			age,
+			relationships,
 		},
 	}
 }
@@ -335,13 +342,14 @@ func printNode(nodeMap NodeMap, root *Node, withGroup bool) ([]metav1.TableRow, 
 	}
 	// Sorts the list of UIDs based on the underlying object in following order:
 	// Namespace, Kind, Group, Name
-	sortUIDsFn := func(uids []types.UID) []types.UID {
-		nodes := make(NodeList, len(uids))
-		for ix, uid := range uids {
+	sortDependentsFn := func(d map[types.UID]RelationshipSet) []types.UID {
+		nodes, ix := make(NodeList, len(d)), 0
+		for uid := range d {
 			nodes[ix] = nodeMap[uid]
+			ix++
 		}
 		sort.Sort(nodes)
-		sortedUIDs := make([]types.UID, len(uids))
+		sortedUIDs := make([]types.UID, len(d))
 		for ix, node := range nodes {
 			sortedUIDs[ix] = node.UID
 		}
@@ -349,9 +357,9 @@ func printNode(nodeMap NodeMap, root *Node, withGroup bool) ([]metav1.TableRow, 
 	}
 
 	var rows []metav1.TableRow
-	row := nodeToTableRow(root, "", showGroupFn)
+	row := nodeToTableRow(root, nil, "", showGroupFn)
 	uidSet := map[types.UID]struct{}{}
-	dependentRows, err := printNodeDependents(nodeMap, uidSet, root, "", sortUIDsFn, showGroupFn)
+	dependentRows, err := printNodeDependents(nodeMap, uidSet, root, "", sortDependentsFn, showGroupFn)
 	if err != nil {
 		return nil, err
 	}
@@ -367,7 +375,7 @@ func printNodeDependents(
 	uidSet map[types.UID]struct{},
 	node *Node,
 	prefix string,
-	sortUIDsFn func(uids []types.UID) []types.UID,
+	sortDependentsFn func(d map[types.UID]RelationshipSet) []types.UID,
 	showGroupFn func(kind string) bool) ([]metav1.TableRow, error) {
 	rows := make([]metav1.TableRow, 0, len(nodeMap))
 
@@ -377,7 +385,7 @@ func printNodeDependents(
 	}
 	uidSet[node.UID] = struct{}{}
 
-	dependents := sortUIDsFn(node.Dependents)
+	dependents := sortDependentsFn(node.Dependents)
 	lastIx := len(dependents) - 1
 	for ix, childUID := range dependents {
 		var childPrefix, dependentPrefix string
@@ -391,8 +399,12 @@ func printNodeDependents(
 		if !ok {
 			return nil, fmt.Errorf("dependent object (uid: %s) not found in list of fetched objects", childUID)
 		}
-		row := nodeToTableRow(child, childPrefix, showGroupFn)
-		dependentRows, err := printNodeDependents(nodeMap, uidSet, child, dependentPrefix, sortUIDsFn, showGroupFn)
+		rset, ok := node.Dependents[childUID]
+		if !ok {
+			return nil, fmt.Errorf("dependent object (uid: %s) not found", childUID)
+		}
+		row := nodeToTableRow(child, rset, childPrefix, showGroupFn)
+		dependentRows, err := printNodeDependents(nodeMap, uidSet, child, dependentPrefix, sortDependentsFn, showGroupFn)
 		if err != nil {
 			return nil, err
 		}
