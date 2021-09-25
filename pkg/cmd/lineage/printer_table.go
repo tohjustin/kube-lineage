@@ -6,15 +6,14 @@ import (
 	"strings"
 	"time"
 
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	unstructuredv1 "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/duration"
 	"k8s.io/client-go/util/jsonpath"
-	"k8s.io/kubernetes/pkg/apis/apps"
-	"k8s.io/kubernetes/pkg/apis/core"
-	"k8s.io/kubernetes/pkg/util/node"
 )
 
 const (
@@ -113,14 +112,14 @@ func getObjectReadyStatus(u *unstructuredv1.Unstructured) (string, string, error
 // https://github.com/kubernetes/kubernetes/blob/v1.22.1/pkg/printers/internalversion/printers.go.
 //nolint:unparam
 func getDaemonSetReadyStatus(u *unstructuredv1.Unstructured) (string, string, error) {
-	var ds apps.DaemonSet
+	var ds appsv1.DaemonSet
 	err := runtime.DefaultUnstructuredConverter.FromUnstructured(u.UnstructuredContent(), &ds)
 	if err != nil {
 		return "", "", err
 	}
 	desiredReplicas := ds.Status.DesiredNumberScheduled
 	readyReplicas := ds.Status.NumberReady
-	ready := fmt.Sprintf("%d/%d", int64(readyReplicas), int64(desiredReplicas))
+	ready := fmt.Sprintf("%d/%d", readyReplicas, desiredReplicas)
 
 	return ready, "", nil
 }
@@ -130,14 +129,14 @@ func getDaemonSetReadyStatus(u *unstructuredv1.Unstructured) (string, string, er
 // https://github.com/kubernetes/kubernetes/blob/v1.22.1/pkg/printers/internalversion/printers.go.
 //nolint:unparam
 func getDeploymentReadyStatus(u *unstructuredv1.Unstructured) (string, string, error) {
-	var deploy apps.Deployment
+	var deploy appsv1.Deployment
 	err := runtime.DefaultUnstructuredConverter.FromUnstructured(u.UnstructuredContent(), &deploy)
 	if err != nil {
 		return "", "", err
 	}
-	desiredReplicas := deploy.Spec.Replicas
+	desiredReplicas := deploy.Status.Replicas
 	readyReplicas := deploy.Status.ReadyReplicas
-	ready := fmt.Sprintf("%d/%d", int64(readyReplicas), int64(desiredReplicas))
+	ready := fmt.Sprintf("%d/%d", readyReplicas, desiredReplicas)
 
 	return ready, "", nil
 }
@@ -147,7 +146,7 @@ func getDeploymentReadyStatus(u *unstructuredv1.Unstructured) (string, string, e
 // https://github.com/kubernetes/kubernetes/blob/v1.22.1/pkg/printers/internalversion/printers.go.
 //nolint:funlen,gocognit,gocyclo
 func getPodReadyStatus(u *unstructuredv1.Unstructured) (string, string, error) {
-	var pod core.Pod
+	var pod corev1.Pod
 	err := runtime.DefaultUnstructuredConverter.FromUnstructured(u.UnstructuredContent(), &pod)
 	if err != nil {
 		return "", "", err
@@ -203,14 +202,16 @@ func getPodReadyStatus(u *unstructuredv1.Unstructured) (string, string, error) {
 		if reason == "Completed" && hasRunning {
 			reason = "NotReady"
 			for _, condition := range pod.Status.Conditions {
-				if condition.Type == core.PodReady && condition.Status == core.ConditionTrue {
+				if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
 					reason = "Running"
 				}
 			}
 		}
 	}
 	if pod.DeletionTimestamp != nil {
-		if pod.Status.Reason == node.NodeUnreachablePodReason {
+		// Hardcode "k8s.io/kubernetes/pkg/util/node.NodeUnreachablePodReason" as
+		// "NodeLost" so we don't need import the entire k8s.io/kubernetes package
+		if pod.Status.Reason == "NodeLost" {
 			reason = "Unknown"
 		} else {
 			reason = "Terminating"
@@ -226,14 +227,14 @@ func getPodReadyStatus(u *unstructuredv1.Unstructured) (string, string, error) {
 // https://github.com/kubernetes/kubernetes/blob/v1.22.1/pkg/printers/internalversion/printers.go.
 //nolint:unparam
 func getReplicaSetReadyStatus(u *unstructuredv1.Unstructured) (string, string, error) {
-	var rs apps.ReplicaSet
+	var rs appsv1.ReplicaSet
 	err := runtime.DefaultUnstructuredConverter.FromUnstructured(u.UnstructuredContent(), &rs)
 	if err != nil {
 		return "", "", err
 	}
-	desiredReplicas := rs.Spec.Replicas
+	desiredReplicas := rs.Status.Replicas
 	readyReplicas := rs.Status.ReadyReplicas
-	ready := fmt.Sprintf("%d/%d", int64(readyReplicas), int64(desiredReplicas))
+	ready := fmt.Sprintf("%d/%d", readyReplicas, desiredReplicas)
 
 	return ready, "", nil
 }
@@ -244,14 +245,14 @@ func getReplicaSetReadyStatus(u *unstructuredv1.Unstructured) (string, string, e
 // https://github.com/kubernetes/kubernetes/blob/v1.22.1/pkg/printers/internalversion/printers.go.
 //nolint:unparam
 func getReplicationControllerReadyStatus(u *unstructuredv1.Unstructured) (string, string, error) {
-	var rc core.ReplicationController
+	var rc corev1.ReplicationController
 	err := runtime.DefaultUnstructuredConverter.FromUnstructured(u.UnstructuredContent(), &rc)
 	if err != nil {
 		return "", "", err
 	}
-	desiredReplicas := rc.Spec.Replicas
+	desiredReplicas := rc.Status.Replicas
 	readyReplicas := rc.Status.ReadyReplicas
-	ready := fmt.Sprintf("%d/%d", int64(readyReplicas), int64(desiredReplicas))
+	ready := fmt.Sprintf("%d/%d", readyReplicas, desiredReplicas)
 
 	return ready, "", nil
 }
@@ -261,14 +262,14 @@ func getReplicationControllerReadyStatus(u *unstructuredv1.Unstructured) (string
 // https://github.com/kubernetes/kubernetes/blob/v1.22.1/pkg/printers/internalversion/printers.go.
 //nolint:unparam
 func getStatefulSetReadyStatus(u *unstructuredv1.Unstructured) (string, string, error) {
-	var sts apps.StatefulSet
+	var sts appsv1.StatefulSet
 	err := runtime.DefaultUnstructuredConverter.FromUnstructured(u.UnstructuredContent(), &sts)
 	if err != nil {
 		return "", "", err
 	}
-	desiredReplicas := sts.Spec.Replicas
+	desiredReplicas := sts.Status.Replicas
 	readyReplicas := sts.Status.ReadyReplicas
-	ready := fmt.Sprintf("%d/%d", int64(readyReplicas), int64(desiredReplicas))
+	ready := fmt.Sprintf("%d/%d", readyReplicas, desiredReplicas)
 
 	return ready, "", nil
 }
