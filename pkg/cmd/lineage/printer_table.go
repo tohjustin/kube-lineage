@@ -8,6 +8,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	eventsv1 "k8s.io/api/events/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	unstructuredv1 "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -139,6 +140,42 @@ func getDeploymentReadyStatus(u *unstructuredv1.Unstructured) (string, string, e
 	ready := fmt.Sprintf("%d/%d", readyReplicas, desiredReplicas)
 
 	return ready, "", nil
+}
+
+// getEventCoreReadyStatus returns the ready & status value of a Event.
+//nolint:unparam
+func getEventCoreReadyStatus(u *unstructuredv1.Unstructured) (string, string, error) {
+	var status string
+	var ev corev1.Event
+	err := runtime.DefaultUnstructuredConverter.FromUnstructured(u.UnstructuredContent(), &ev)
+	if err != nil {
+		return "", "", err
+	}
+	if ev.Count > 1 {
+		status = fmt.Sprintf("%s: %s (x%d)", ev.Reason, ev.Message, ev.Count)
+	} else {
+		status = fmt.Sprintf("%s: %s", ev.Reason, ev.Message)
+	}
+
+	return "", status, nil
+}
+
+// getEventReadyStatus returns the ready & status value of a Event.events.k8s.io.
+//nolint:unparam
+func getEventReadyStatus(u *unstructuredv1.Unstructured) (string, string, error) {
+	var status string
+	var ev eventsv1.Event
+	err := runtime.DefaultUnstructuredConverter.FromUnstructured(u.UnstructuredContent(), &ev)
+	if err != nil {
+		return "", "", err
+	}
+	if ev.DeprecatedCount > 1 {
+		status = fmt.Sprintf("%s: %s (x%d)", ev.Reason, ev.Note, ev.DeprecatedCount)
+	} else {
+		status = fmt.Sprintf("%s: %s", ev.Reason, ev.Note)
+	}
+
+	return "", status, nil
 }
 
 // getPodReadyStatus returns the ready & status value of a Pod which is based
@@ -275,7 +312,7 @@ func getStatefulSetReadyStatus(u *unstructuredv1.Unstructured) (string, string, 
 }
 
 // nodeToTableRow converts the provided node into a table row.
-//nolint:goconst
+//nolint:gocognit,goconst
 func nodeToTableRow(node *Node, rset RelationshipSet, namePrefix string, showGroupFn func(kind string) bool) metav1.TableRow {
 	var name, ready, status, age string
 	var relationships interface{}
@@ -286,6 +323,8 @@ func nodeToTableRow(node *Node, rset RelationshipSet, namePrefix string, showGro
 		name = fmt.Sprintf("%s%s/%s", namePrefix, node.Kind, node.Name)
 	}
 	switch {
+	case node.Group == "" && node.Kind == "Event":
+		ready, status, _ = getEventCoreReadyStatus(node.Unstructured)
 	case node.Group == "" && node.Kind == "Pod":
 		ready, status, _ = getPodReadyStatus(node.Unstructured)
 	case node.Group == "" && node.Kind == "ReplicationController":
@@ -298,6 +337,8 @@ func nodeToTableRow(node *Node, rset RelationshipSet, namePrefix string, showGro
 		ready, status, _ = getReplicaSetReadyStatus(node.Unstructured)
 	case node.Group == "apps" && node.Kind == "StatefulSet":
 		ready, status, _ = getStatefulSetReadyStatus(node.Unstructured)
+	case node.Group == "events.k8s.io" && node.Kind == "Event":
+		ready, status, _ = getEventReadyStatus(node.Unstructured)
 	default:
 		ready, status, _ = getObjectReadyStatus(node.Unstructured)
 	}

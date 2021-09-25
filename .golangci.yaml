@@ -12,6 +12,8 @@ linters:
     - sqlclosecheck    # exclude 'sql' preset
     - exhaustivestruct
     - gochecknoglobals
+    - goconst
+    - godox
     - goerr113
     - gomnd
     - gomoddirectives

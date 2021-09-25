@@ -3,8 +3,11 @@ package lineage
 import (
 	"sort"
 
+	corev1 "k8s.io/api/core/v1"
+	eventsv1 "k8s.io/api/events/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	unstructuredv1 "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
 )
@@ -15,7 +18,7 @@ func (s sortableStringSlice) Len() int           { return len(s) }
 func (s sortableStringSlice) Less(i, j int) bool { return s[i] < s[j] }
 func (s sortableStringSlice) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
 
-// Relationship represents a relationship type.
+// Relationship represents a relationship type between two Kubernetes objects.
 type Relationship string
 
 // RelationshipSet contains a set of relationships.
@@ -47,6 +50,10 @@ type Node struct {
 type NodeMap map[types.UID]*Node
 
 const (
+	// Kubernetes Event relationships.
+	RelationshipEventRegarding Relationship = "EventRegarding"
+	RelationshipEventRelated   Relationship = "EventRelated"
+
 	// Kubernetes Owner-Dependent relationships.
 	RelationshipControllerRef Relationship = "ControllerReference"
 	RelationshipOwnerRef      Relationship = "OwnerReference"
@@ -54,21 +61,39 @@ const (
 
 // resolveDependents resolves all dependents of the provided root object and
 // returns a relationship tree.
-//nolint:funlen,gocognit
+//nolint:funlen,gocognit,gocyclo
 func resolveDependents(objects []unstructuredv1.Unstructured, rootUID types.UID) NodeMap {
 	// Create global node map of all objects
 	globalMap := NodeMap{}
 	for ix, o := range objects {
+		gvk := o.GroupVersionKind()
 		node := Node{
 			Unstructured:    &objects[ix],
 			UID:             o.GetUID(),
+			Name:            o.GetName(),
+			Namespace:       o.GetNamespace(),
+			Group:           gvk.Group,
+			Kind:            gvk.Kind,
 			OwnerReferences: o.GetOwnerReferences(),
 			Dependents:      map[types.UID]RelationshipSet{},
 		}
 		globalMap[node.UID] = &node
+
+		if node.Group == "" && node.Kind == "Node" {
+			// Node events sent by the Kubelet uses the node's name as the
+			// ObjectReference UID, so we include them as keys in our global map to
+			// support lookup by nodename
+			globalMap[types.UID(node.Name)] = &node
+			// Node events sent by the kube-proxy uses the node's hostname as the
+			// ObjectReference UID, so we include them as keys in our global map to
+			// support lookup by hostname
+			if hostname, ok := o.GetLabels()["kubernetes.io/hostname"]; ok {
+				globalMap[types.UID(hostname)] = &node
+			}
+		}
 	}
 
-	// Populate dependents data for every node
+	// Populate dependents based on ControllerRef & OwnerRef relationships
 	for _, node := range globalMap {
 		uid, ownerRefs := node.UID, node.OwnerReferences
 		for _, ref := range ownerRefs {
@@ -83,6 +108,53 @@ func resolveDependents(objects []unstructuredv1.Unstructured, rootUID types.UID)
 					owner.Dependents[uid][RelationshipOwnerRef] = struct{}{}
 				}
 			}
+		}
+	}
+
+	// Populate dependents based on EventRegarding & EventRelated relationships
+	// TODO: It's possible to have events to be in a different namespace from the
+	//       its referenced object, so update the resource fetching logic to
+	//       always try to fetch events at the cluster scope for event resources
+	var evUID, regUID, relUID types.UID
+	var err error
+	for _, node := range globalMap {
+		switch {
+		case node.Group == "" && node.Kind == "Event":
+			evUID = node.UID
+			regUID, err = getEventCoreReferenceUID(node.Unstructured)
+			if err != nil || len(regUID) == 0 {
+				klog.V(4).Infof("Failed to get object reference for event named \"%s\" in namespace \"%s\"", node.Name, node.Namespace)
+				continue
+			}
+			if ref, ok := globalMap[regUID]; ok {
+				if _, ok := ref.Dependents[evUID]; !ok {
+					ref.Dependents[evUID] = RelationshipSet{}
+				}
+				ref.Dependents[evUID][RelationshipEventRegarding] = struct{}{}
+			}
+		case node.Group == "events.k8s.io" && node.Kind == "Event":
+			evUID = node.UID
+			regUID, relUID, err = getEventReferenceUIDs(node.Unstructured)
+			if err != nil || len(regUID) == 0 {
+				klog.V(4).Infof("Failed to get object reference for event.events.k8s.io named \"%s\" in namespace \"%s\"", node.Name, node.Namespace)
+				continue
+			}
+			if ref, ok := globalMap[regUID]; ok {
+				if _, ok := ref.Dependents[evUID]; !ok {
+					ref.Dependents[evUID] = RelationshipSet{}
+				}
+				ref.Dependents[evUID][RelationshipEventRegarding] = struct{}{}
+			}
+			if len(relUID) > 0 {
+				if ref, ok := globalMap[relUID]; ok {
+					if _, ok := ref.Dependents[evUID]; !ok {
+						ref.Dependents[evUID] = RelationshipSet{}
+					}
+					ref.Dependents[evUID][RelationshipEventRelated] = struct{}{}
+				}
+			}
+		default:
+			continue
 		}
 	}
 
@@ -117,15 +189,38 @@ func resolveDependents(objects []unstructuredv1.Unstructured, rootUID types.UID)
 		}
 	}
 
-	// Populate remaining data for submap nodes
-	for _, o := range nodeMap {
-		gvk := o.GroupVersionKind()
-		o.Group = gvk.Group
-		o.Kind = gvk.Kind
-		o.Name = o.GetName()
-		o.Namespace = o.GetNamespace()
-	}
-
 	klog.V(4).Infof("Resolved %d dependents for root object (uid: %s)", len(nodeMap)-1, rootUID)
 	return nodeMap
+}
+
+// getEventCoreReferenceUID returns the UID of the object this Event is about.
+// The UID will be an empty string if the reference doesn't exist.
+func getEventCoreReferenceUID(u *unstructuredv1.Unstructured) (types.UID, error) {
+	var regUID types.UID
+	var ev corev1.Event
+	err := runtime.DefaultUnstructuredConverter.FromUnstructured(u.UnstructuredContent(), &ev)
+	if err != nil {
+		return "", err
+	}
+	regUID = ev.InvolvedObject.UID
+
+	return regUID, nil
+}
+
+// getEventReferenceUIDs returns the UID of the object this Event.events.k8s.io
+// is about & the UID of a secondary object if it exist. The UID will be an
+// empty string if the reference doesn't exist.
+func getEventReferenceUIDs(u *unstructuredv1.Unstructured) (types.UID, types.UID, error) {
+	var regUID, relUID types.UID
+	var ev eventsv1.Event
+	err := runtime.DefaultUnstructuredConverter.FromUnstructured(u.UnstructuredContent(), &ev)
+	if err != nil {
+		return "", "", err
+	}
+	regUID = ev.Regarding.UID
+	if ev.Related != nil {
+		relUID = ev.Related.UID
+	}
+
+	return regUID, relUID, nil
 }
