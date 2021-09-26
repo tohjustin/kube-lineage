@@ -46,6 +46,13 @@ type Node struct {
 	Dependents      map[types.UID]RelationshipSet
 }
 
+func (n *Node) AddDependent(uid types.UID, r Relationship) {
+	if _, ok := n.Dependents[uid]; !ok {
+		n.Dependents[uid] = RelationshipSet{}
+	}
+	n.Dependents[uid][r] = struct{}{}
+}
+
 // NodeMap contains a relationship tree stored as a map of nodes.
 type NodeMap map[types.UID]*Node
 
@@ -61,7 +68,7 @@ const (
 
 // resolveDependents resolves all dependents of the provided root object and
 // returns a relationship tree.
-//nolint:funlen,gocognit,gocyclo
+//nolint:funlen,gocognit
 func resolveDependents(objects []unstructuredv1.Unstructured, rootUID types.UID) NodeMap {
 	// Create global node map of all objects
 	globalMap := NodeMap{}
@@ -95,18 +102,13 @@ func resolveDependents(objects []unstructuredv1.Unstructured, rootUID types.UID)
 
 	// Populate dependents based on ControllerRef & OwnerRef relationships
 	for _, node := range globalMap {
-		uid, ownerRefs := node.UID, node.OwnerReferences
-		for _, ref := range ownerRefs {
-			if owner, ok := globalMap[ref.UID]; ok {
-				if _, ok := owner.Dependents[uid]; !ok {
-					owner.Dependents[uid] = RelationshipSet{}
-				}
+		uid, refs := node.UID, node.OwnerReferences
+		for _, ref := range refs {
+			if n, ok := globalMap[ref.UID]; ok {
 				if ref.Controller != nil && *ref.Controller {
-					owner.Dependents[uid][RelationshipControllerRef] = struct{}{}
-					owner.Dependents[uid][RelationshipOwnerRef] = struct{}{}
-				} else {
-					owner.Dependents[uid][RelationshipOwnerRef] = struct{}{}
+					n.AddDependent(uid, RelationshipControllerRef)
 				}
+				n.AddDependent(uid, RelationshipOwnerRef)
 			}
 		}
 	}
@@ -126,11 +128,8 @@ func resolveDependents(objects []unstructuredv1.Unstructured, rootUID types.UID)
 				klog.V(4).Infof("Failed to get object reference for event named \"%s\" in namespace \"%s\"", node.Name, node.Namespace)
 				continue
 			}
-			if ref, ok := globalMap[regUID]; ok {
-				if _, ok := ref.Dependents[evUID]; !ok {
-					ref.Dependents[evUID] = RelationshipSet{}
-				}
-				ref.Dependents[evUID][RelationshipEventRegarding] = struct{}{}
+			if n, ok := globalMap[regUID]; ok {
+				n.AddDependent(evUID, RelationshipEventRegarding)
 			}
 		case node.Group == "events.k8s.io" && node.Kind == "Event":
 			evUID = node.UID
@@ -139,18 +138,12 @@ func resolveDependents(objects []unstructuredv1.Unstructured, rootUID types.UID)
 				klog.V(4).Infof("Failed to get object reference for event.events.k8s.io named \"%s\" in namespace \"%s\"", node.Name, node.Namespace)
 				continue
 			}
-			if ref, ok := globalMap[regUID]; ok {
-				if _, ok := ref.Dependents[evUID]; !ok {
-					ref.Dependents[evUID] = RelationshipSet{}
-				}
-				ref.Dependents[evUID][RelationshipEventRegarding] = struct{}{}
+			if n, ok := globalMap[regUID]; ok {
+				n.AddDependent(evUID, RelationshipEventRegarding)
 			}
 			if len(relUID) > 0 {
-				if ref, ok := globalMap[relUID]; ok {
-					if _, ok := ref.Dependents[evUID]; !ok {
-						ref.Dependents[evUID] = RelationshipSet{}
-					}
-					ref.Dependents[evUID][RelationshipEventRelated] = struct{}{}
+				if n, ok := globalMap[relUID]; ok {
+					n.AddDependent(evUID, RelationshipEventRelated)
 				}
 			}
 		default:
