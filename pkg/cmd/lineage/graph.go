@@ -3,11 +3,8 @@ package lineage
 import (
 	"sort"
 
-	corev1 "k8s.io/api/core/v1"
-	eventsv1 "k8s.io/api/events/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	unstructuredv1 "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
 )
@@ -51,6 +48,14 @@ func (n *Node) AddDependent(uid types.UID, r Relationship) {
 		n.Dependents[uid] = RelationshipSet{}
 	}
 	n.Dependents[uid][r] = struct{}{}
+}
+
+func (n *Node) GetNestedString(fields ...string) string {
+	val, found, err := unstructuredv1.NestedString(n.UnstructuredContent(), fields...)
+	if !found || err != nil {
+		return ""
+	}
+	return val
 }
 
 // NodeMap contains a relationship tree stored as a map of nodes.
@@ -102,13 +107,12 @@ func resolveDependents(objects []unstructuredv1.Unstructured, rootUID types.UID)
 
 	// Populate dependents based on ControllerRef & OwnerRef relationships
 	for _, node := range globalMap {
-		uid, refs := node.UID, node.OwnerReferences
-		for _, ref := range refs {
+		for _, ref := range node.OwnerReferences {
 			if n, ok := globalMap[ref.UID]; ok {
 				if ref.Controller != nil && *ref.Controller {
-					n.AddDependent(uid, RelationshipControllerRef)
+					n.AddDependent(node.UID, RelationshipControllerRef)
 				}
-				n.AddDependent(uid, RelationshipOwnerRef)
+				n.AddDependent(node.UID, RelationshipOwnerRef)
 			}
 		}
 	}
@@ -117,37 +121,19 @@ func resolveDependents(objects []unstructuredv1.Unstructured, rootUID types.UID)
 	// TODO: It's possible to have events to be in a different namespace from the
 	//       its referenced object, so update the resource fetching logic to
 	//       always try to fetch events at the cluster scope for event resources
-	var evUID, regUID, relUID types.UID
-	var err error
 	for _, node := range globalMap {
-		switch {
-		case node.Group == "" && node.Kind == "Event":
-			evUID = node.UID
-			regUID, err = getEventCoreReferenceUID(node.Unstructured)
-			if err != nil || len(regUID) == 0 {
+		if (node.Group == "" || node.Group == "events.k8s.io") && node.Kind == "Event" {
+			regUID, relUID := getEventReferenceUIDs(node)
+			if len(regUID) == 0 {
 				klog.V(4).Infof("Failed to get object reference for event named \"%s\" in namespace \"%s\"", node.Name, node.Namespace)
 				continue
 			}
 			if n, ok := globalMap[regUID]; ok {
-				n.AddDependent(evUID, RelationshipEventRegarding)
+				n.AddDependent(node.UID, RelationshipEventRegarding)
 			}
-		case node.Group == "events.k8s.io" && node.Kind == "Event":
-			evUID = node.UID
-			regUID, relUID, err = getEventReferenceUIDs(node.Unstructured)
-			if err != nil || len(regUID) == 0 {
-				klog.V(4).Infof("Failed to get object reference for event.events.k8s.io named \"%s\" in namespace \"%s\"", node.Name, node.Namespace)
-				continue
+			if n, ok := globalMap[relUID]; ok {
+				n.AddDependent(node.UID, RelationshipEventRelated)
 			}
-			if n, ok := globalMap[regUID]; ok {
-				n.AddDependent(evUID, RelationshipEventRegarding)
-			}
-			if len(relUID) > 0 {
-				if n, ok := globalMap[relUID]; ok {
-					n.AddDependent(evUID, RelationshipEventRelated)
-				}
-			}
-		default:
-			continue
 		}
 	}
 
@@ -186,34 +172,17 @@ func resolveDependents(objects []unstructuredv1.Unstructured, rootUID types.UID)
 	return nodeMap
 }
 
-// getEventCoreReferenceUID returns the UID of the object this Event is about.
-// The UID will be an empty string if the reference doesn't exist.
-func getEventCoreReferenceUID(u *unstructuredv1.Unstructured) (types.UID, error) {
-	var regUID types.UID
-	var ev corev1.Event
-	err := runtime.DefaultUnstructuredConverter.FromUnstructured(u.UnstructuredContent(), &ev)
-	if err != nil {
-		return "", err
+// getEventReferenceUIDs returns the UID of the object this Event is about & the
+// UID of a secondary object if it exist. The returned UID will be an empty
+// string if the reference doesn't exist.
+func getEventReferenceUIDs(n *Node) (types.UID, types.UID) {
+	var regUID, relUID string
+	switch n.Group {
+	case "":
+		regUID = n.GetNestedString("involvedobject", "uid")
+	case "events.k8s.io":
+		regUID = n.GetNestedString("regarding", "uid")
+		relUID = n.GetNestedString("related", "uid")
 	}
-	regUID = ev.InvolvedObject.UID
-
-	return regUID, nil
-}
-
-// getEventReferenceUIDs returns the UID of the object this Event.events.k8s.io
-// is about & the UID of a secondary object if it exist. The UID will be an
-// empty string if the reference doesn't exist.
-func getEventReferenceUIDs(u *unstructuredv1.Unstructured) (types.UID, types.UID, error) {
-	var regUID, relUID types.UID
-	var ev eventsv1.Event
-	err := runtime.DefaultUnstructuredConverter.FromUnstructured(u.UnstructuredContent(), &ev)
-	if err != nil {
-		return "", "", err
-	}
-	regUID = ev.Regarding.UID
-	if ev.Related != nil {
-		relUID = ev.Related.UID
-	}
-
-	return regUID, relUID, nil
+	return types.UID(regUID), types.UID(relUID)
 }
