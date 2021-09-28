@@ -5,6 +5,8 @@ import (
 	"sort"
 
 	corev1 "k8s.io/api/core/v1"
+	extensionsv1beta1 "k8s.io/api/extensions/v1beta1"
+	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	unstructuredv1 "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -143,6 +145,13 @@ const (
 	RelationshipEventRegarding Relationship = "EventRegarding"
 	RelationshipEventRelated   Relationship = "EventRelated"
 
+	// Kubernetes Ingress & IngressClass relationships.
+	RelationshipIngressClass           Relationship = "IngressClass"
+	RelationshipIngressClassParameters Relationship = "IngressClassParameters"
+	RelationshipIngressResource        Relationship = "IngressResource"
+	RelationshipIngressService         Relationship = "IngressService"
+	RelationshipIngressTLSSecret       Relationship = "IngressTLSSecret"
+
 	// Kubernetes Owner-Dependent relationships.
 	RelationshipControllerRef Relationship = "ControllerReference"
 	RelationshipOwnerRef      Relationship = "OwnerReference"
@@ -259,6 +268,20 @@ func resolveDependents(objects []unstructuredv1.Unstructured, rootUID types.UID)
 				klog.V(4).Infof("Failed to get relationships for event named \"%s\" in namespace \"%s\": %s", node.Name, node.Namespace, err)
 				continue
 			}
+		// Populate dependents based on Ingress relationships
+		case (node.Group == "extensions" || node.Group == "networking.k8s.io") && node.Kind == "Ingress":
+			rmap, err = getIngressRelationships(node)
+			if err != nil {
+				klog.V(4).Infof("Failed to get relationships for ingress named \"%s\" in namespace \"%s\": %s", node.Name, node.Namespace, err)
+				continue
+			}
+		// Populate dependents based on IngressClass relationships
+		case node.Group == "networking.k8s.io" && node.Kind == "IngressClass":
+			rmap, err = getIngressClassRelationships(node)
+			if err != nil {
+				klog.V(4).Infof("Failed to get relationships for ingressclass named \"%s\": %s", node.Name, err)
+				continue
+			}
 		// Populate dependents based on PersistentVolume relationships
 		case node.Group == "" && node.Kind == "PersistentVolume":
 			rmap, err = getPersistentVolumeRelationships(node)
@@ -345,6 +368,141 @@ func getEventRelationships(n *Node) (*RelationshipMap, error) {
 		// RelationshipEventRelated
 		relUID := types.UID(n.GetNestedString("related", "uid"))
 		result.AddDependencyByUID(relUID, RelationshipEventRelated)
+	}
+
+	return &result, nil
+}
+
+// getIngressRelationships returns a map of relationships that this Ingress has
+// with other objects, based on what was referenced in its manifest.
+//nolint:funlen,gocognit
+func getIngressRelationships(n *Node) (*RelationshipMap, error) {
+	var ref ObjectReference
+	ns := n.Namespace
+	result := newRelationshipMap()
+	switch n.Group {
+	case "extensions":
+		var ing extensionsv1beta1.Ingress
+		err := runtime.DefaultUnstructuredConverter.FromUnstructured(n.UnstructuredContent(), &ing)
+		if err != nil {
+			return nil, err
+		}
+
+		// RelationshipIngressClass
+		if ingc := ing.Spec.IngressClassName; ingc != nil && len(*ingc) > 0 {
+			ref = ObjectReference{Group: "networking.k8s.io", Kind: "IngressClass", Name: *ingc}
+			result.AddDependencyByKey(ref.Key(), RelationshipIngressClass)
+		}
+
+		// RelationshipIngressResource
+		// RelationshipIngressService
+		var backends []extensionsv1beta1.IngressBackend
+		if ing.Spec.Backend != nil {
+			backends = append(backends, *ing.Spec.Backend)
+		}
+		for _, rule := range ing.Spec.Rules {
+			if rule.HTTP != nil {
+				for _, path := range rule.HTTP.Paths {
+					backends = append(backends, path.Backend)
+				}
+			}
+		}
+		for _, b := range backends {
+			switch {
+			case b.Resource != nil:
+				group := ""
+				if b.Resource.APIGroup != nil {
+					group = *b.Resource.APIGroup
+				}
+				ref = ObjectReference{Group: group, Kind: b.Resource.Kind, Name: b.Resource.Name, Namespace: ns}
+				result.AddDependencyByKey(ref.Key(), RelationshipIngressResource)
+			case b.ServiceName != "":
+				ref = ObjectReference{Kind: "Service", Name: b.ServiceName, Namespace: ns}
+				result.AddDependencyByKey(ref.Key(), RelationshipIngressService)
+			}
+		}
+
+		// RelationshipIngressTLSSecret
+		for _, tls := range ing.Spec.TLS {
+			ref = ObjectReference{Kind: "Secret", Name: tls.SecretName, Namespace: ns}
+			result.AddDependencyByKey(ref.Key(), RelationshipIngressClass)
+		}
+	case "networking.k8s.io":
+		var ing networkingv1.Ingress
+		err := runtime.DefaultUnstructuredConverter.FromUnstructured(n.UnstructuredContent(), &ing)
+		if err != nil {
+			return nil, err
+		}
+
+		// RelationshipIngressClass
+		if ingc := ing.Spec.IngressClassName; ingc != nil && len(*ingc) > 0 {
+			ref = ObjectReference{Group: "networking.k8s.io", Kind: "IngressClass", Name: *ingc}
+			result.AddDependencyByKey(ref.Key(), RelationshipIngressClass)
+		}
+
+		// RelationshipIngressResource
+		// RelationshipIngressService
+		var backends []networkingv1.IngressBackend
+		if ing.Spec.DefaultBackend != nil {
+			backends = append(backends, *ing.Spec.DefaultBackend)
+		}
+		for _, rule := range ing.Spec.Rules {
+			if rule.HTTP != nil {
+				for _, path := range rule.HTTP.Paths {
+					backends = append(backends, path.Backend)
+				}
+			}
+		}
+		for _, b := range backends {
+			switch {
+			case b.Resource != nil:
+				group := ""
+				if b.Resource.APIGroup != nil {
+					group = *b.Resource.APIGroup
+				}
+				ref = ObjectReference{Group: group, Kind: b.Resource.Kind, Name: b.Resource.Name, Namespace: ns}
+				result.AddDependencyByKey(ref.Key(), RelationshipIngressResource)
+			case b.Service != nil:
+				ref = ObjectReference{Kind: "Service", Name: b.Service.Name, Namespace: ns}
+				result.AddDependencyByKey(ref.Key(), RelationshipIngressService)
+			}
+		}
+
+		// RelationshipIngressTLSSecret
+		for _, tls := range ing.Spec.TLS {
+			ref = ObjectReference{Kind: "Secret", Name: tls.SecretName, Namespace: ns}
+			result.AddDependencyByKey(ref.Key(), RelationshipIngressClass)
+		}
+	}
+
+	return &result, nil
+}
+
+// getIngressClassRelationships returns a map of relationships that this
+// IngressClass has with other objects, based on what was referenced in its
+// manifest.
+func getIngressClassRelationships(n *Node) (*RelationshipMap, error) {
+	var ingc networkingv1.IngressClass
+	err := runtime.DefaultUnstructuredConverter.FromUnstructured(n.UnstructuredContent(), &ingc)
+	if err != nil {
+		return nil, err
+	}
+
+	var ref ObjectReference
+	result := newRelationshipMap()
+
+	// RelationshipIngressClassParameters
+	if p := ingc.Spec.Parameters; p != nil {
+		group := ""
+		if p.APIGroup != nil {
+			group = *p.APIGroup
+		}
+		ns := ""
+		if p.Namespace != nil {
+			ns = *p.Namespace
+		}
+		ref = ObjectReference{Group: group, Kind: p.Kind, Namespace: ns, Name: p.Name}
+		result.AddDependencyByKey(ref.Key(), RelationshipIngressClassParameters)
 	}
 
 	return &result, nil
