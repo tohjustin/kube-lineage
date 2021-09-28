@@ -12,6 +12,24 @@ import (
 	"k8s.io/klog/v2"
 )
 
+// ObjectReference is a reference to a Kubernetes object.
+type ObjectReference struct {
+	Group     string
+	Kind      string
+	Namespace string
+	Name      string
+}
+
+// ObjectReferenceKey is a compact representation of an ObjectReference.
+// Typically used as key types for in maps.
+type ObjectReferenceKey string
+
+// Key converts the ObjectReference into a ObjectReferenceKey.
+func (o *ObjectReference) Key() ObjectReferenceKey {
+	k := fmt.Sprintf("%s/%s/%s/%s", o.Group, o.Kind, o.Namespace, o.Name)
+	return ObjectReferenceKey(k)
+}
+
 type sortableStringSlice []string
 
 func (s sortableStringSlice) Len() int           { return len(s) }
@@ -34,14 +52,60 @@ func (s RelationshipSet) List() []string {
 	return []string(res)
 }
 
+// RelationshipMap contains a map of relationships a Kubernetes object has with
+// other objects in the cluster.
+type RelationshipMap struct {
+	DependenciesByRef map[ObjectReferenceKey]RelationshipSet
+	DependenciesByUID map[types.UID]RelationshipSet
+	DependentsByRef   map[ObjectReferenceKey]RelationshipSet
+	DependentsByUID   map[types.UID]RelationshipSet
+}
+
+func newRelationshipMap() RelationshipMap {
+	return RelationshipMap{
+		DependenciesByRef: map[ObjectReferenceKey]RelationshipSet{},
+		DependenciesByUID: map[types.UID]RelationshipSet{},
+		DependentsByRef:   map[ObjectReferenceKey]RelationshipSet{},
+		DependentsByUID:   map[types.UID]RelationshipSet{},
+	}
+}
+
+func (m *RelationshipMap) AddDependencyByKey(k ObjectReferenceKey, r Relationship) {
+	if _, ok := m.DependenciesByRef[k]; !ok {
+		m.DependenciesByRef[k] = RelationshipSet{}
+	}
+	m.DependenciesByRef[k][r] = struct{}{}
+}
+
+func (m *RelationshipMap) AddDependencyByUID(uid types.UID, r Relationship) {
+	if _, ok := m.DependenciesByUID[uid]; !ok {
+		m.DependenciesByUID[uid] = RelationshipSet{}
+	}
+	m.DependenciesByUID[uid][r] = struct{}{}
+}
+
+func (m *RelationshipMap) AddDependentByKey(k ObjectReferenceKey, r Relationship) {
+	if _, ok := m.DependentsByRef[k]; !ok {
+		m.DependentsByRef[k] = RelationshipSet{}
+	}
+	m.DependentsByRef[k][r] = struct{}{}
+}
+
+func (m *RelationshipMap) AddDependentByUID(uid types.UID, r Relationship) {
+	if _, ok := m.DependentsByUID[uid]; !ok {
+		m.DependentsByUID[uid] = RelationshipSet{}
+	}
+	m.DependentsByUID[uid][r] = struct{}{}
+}
+
 // Node represents a Kubernetes object in an relationship tree.
 type Node struct {
 	*unstructuredv1.Unstructured
 	UID             types.UID
-	Name            string
-	Namespace       string
 	Group           string
 	Kind            string
+	Namespace       string
+	Name            string
 	OwnerReferences []metav1.OwnerReference
 	Dependents      map[types.UID]RelationshipSet
 }
@@ -53,18 +117,22 @@ func (n *Node) AddDependent(uid types.UID, r Relationship) {
 	n.Dependents[uid][r] = struct{}{}
 }
 
+func (n *Node) GetObjectReferenceKey() ObjectReferenceKey {
+	ref := ObjectReference{
+		Group:     n.Group,
+		Kind:      n.Kind,
+		Name:      n.Name,
+		Namespace: n.Namespace,
+	}
+	return ref.Key()
+}
+
 func (n *Node) GetNestedString(fields ...string) string {
 	val, found, err := unstructuredv1.NestedString(n.UnstructuredContent(), fields...)
 	if !found || err != nil {
 		return ""
 	}
 	return val
-}
-
-// Key returns a key composed of the node's group, kind, namespace & name which
-// can be used to identify or reference a node.
-func (n *Node) Key() string {
-	return fmt.Sprintf("%s/%s/%s/%s", n.Group, n.Kind, n.Namespace, n.Name)
 }
 
 // NodeMap contains a relationship tree stored as a map of nodes.
@@ -91,12 +159,12 @@ const (
 
 // resolveDependents resolves all dependents of the provided root object and
 // returns a relationship tree.
-//nolint:funlen,gocognit
+//nolint:funlen,gocognit,gocyclo
 func resolveDependents(objects []unstructuredv1.Unstructured, rootUID types.UID) NodeMap {
 	// Create global node maps of all objects, one mapped by node UIDs & the other
 	// mapped by node keys
-	globalMap := NodeMap{}
-	globalMapByKey := map[string]*Node{}
+	globalMapByUID := map[types.UID]*Node{}
+	globalMapByKey := map[ObjectReferenceKey]*Node{}
 	for ix, o := range objects {
 		gvk := o.GroupVersionKind()
 		node := Node{
@@ -109,27 +177,59 @@ func resolveDependents(objects []unstructuredv1.Unstructured, rootUID types.UID)
 			OwnerReferences: o.GetOwnerReferences(),
 			Dependents:      map[types.UID]RelationshipSet{},
 		}
-		globalMap[node.UID] = &node
-		globalMapByKey[node.Key()] = &node
+		uid, key := node.UID, node.GetObjectReferenceKey()
+		globalMapByUID[uid] = &node
+		globalMapByKey[key] = &node
 
 		if node.Group == "" && node.Kind == "Node" {
 			// Node events sent by the Kubelet uses the node's name as the
 			// ObjectReference UID, so we include them as keys in our global map to
 			// support lookup by nodename
-			globalMap[types.UID(node.Name)] = &node
+			globalMapByUID[types.UID(node.Name)] = &node
 			// Node events sent by the kube-proxy uses the node's hostname as the
 			// ObjectReference UID, so we include them as keys in our global map to
 			// support lookup by hostname
 			if hostname, ok := o.GetLabels()["kubernetes.io/hostname"]; ok {
-				globalMap[types.UID(hostname)] = &node
+				globalMapByUID[types.UID(hostname)] = &node
+			}
+		}
+	}
+
+	updateRelationships := func(node *Node, rmap *RelationshipMap) {
+		for k, rset := range rmap.DependenciesByRef {
+			if n, ok := globalMapByKey[k]; ok {
+				for r := range rset {
+					n.AddDependent(node.UID, r)
+				}
+			}
+		}
+		for uid, rset := range rmap.DependenciesByUID {
+			if n, ok := globalMapByUID[uid]; ok {
+				for r := range rset {
+					n.AddDependent(node.UID, r)
+				}
+			}
+		}
+		for k, rset := range rmap.DependentsByRef {
+			if n, ok := globalMapByKey[k]; ok {
+				for r := range rset {
+					node.AddDependent(n.UID, r)
+				}
+			}
+		}
+		for uid, rset := range rmap.DependentsByUID {
+			if n, ok := globalMapByUID[uid]; ok {
+				for r := range rset {
+					node.AddDependent(n.UID, r)
+				}
 			}
 		}
 	}
 
 	// Populate dependents based on Owner-Dependent relationships
-	for _, node := range globalMap {
+	for _, node := range globalMapByUID {
 		for _, ref := range node.OwnerReferences {
-			if n, ok := globalMap[ref.UID]; ok {
+			if n, ok := globalMapByUID[ref.UID]; ok {
 				if ref.Controller != nil && *ref.Controller {
 					n.AddDependent(node.UID, RelationshipControllerRef)
 				}
@@ -138,47 +238,36 @@ func resolveDependents(objects []unstructuredv1.Unstructured, rootUID types.UID)
 		}
 	}
 
-	// Populate dependents based on Event relationships
-	// TODO: It's possible to have events to be in a different namespace from the
-	//       its referenced object, so update the resource fetching logic to
-	//       always try to fetch events at the cluster scope for event resources
-	for _, node := range globalMap {
-		if (node.Group == "" || node.Group == "events.k8s.io") && node.Kind == "Event" {
-			regUID, relUID := getEventReferenceUIDs(node)
-			if len(regUID) == 0 {
-				klog.V(4).Infof("Failed to get object reference for event named \"%s\" in namespace \"%s\"", node.Name, node.Namespace)
-				continue
-			}
-			if n, ok := globalMap[regUID]; ok {
-				n.AddDependent(node.UID, RelationshipEventRegarding)
-			}
-			if n, ok := globalMap[relUID]; ok {
-				n.AddDependent(node.UID, RelationshipEventRelated)
-			}
-		}
-	}
-
-	// Populate dependents based on Pod relationships
-	for _, node := range globalMap {
-		if node.Group == "" && node.Kind == "Pod" {
-			keyToRsetMap, err := getPodRelationships(node)
+	var rmap *RelationshipMap
+	var err error
+	for _, node := range globalMapByUID {
+		switch {
+		// Populate dependents based on Event relationships
+		// TODO: It's possible to have events to be in a different namespace from the
+		//       its referenced object, so update the resource fetching logic to
+		//       always try to fetch events at the cluster scope for event resources
+		case (node.Group == "" || node.Group == "events.k8s.io") && node.Kind == "Event":
+			rmap, err = getEventRelationships(node)
 			if err != nil {
-				klog.V(4).Infof("Failed to get object references for pod named \"%s\" in namespace \"%s\": %s", node.Name, node.Namespace, err)
+				klog.V(4).Infof("Failed to get relationships for event named \"%s\" in namespace \"%s\": %s", node.Name, node.Namespace, err)
 				continue
 			}
-			for k, rset := range keyToRsetMap {
-				if n, ok := globalMapByKey[k]; ok {
-					for r := range rset {
-						n.AddDependent(node.UID, r)
-					}
-				}
+		// Populate dependents based on Pod relationships
+		case node.Group == "" && node.Kind == "Pod":
+			rmap, err = getPodRelationships(node)
+			if err != nil {
+				klog.V(4).Infof("Failed to get relationships for pod named \"%s\" in namespace \"%s\": %s", node.Name, node.Namespace, err)
+				continue
 			}
+		default:
+			continue
 		}
+		updateRelationships(node, rmap)
 	}
 
 	// Create submap of the root node & its dependents from the global map
 	nodeMap, uidQueue, uidSet := NodeMap{}, []types.UID{}, map[types.UID]struct{}{}
-	if node := globalMap[rootUID]; node != nil {
+	if node := globalMapByUID[rootUID]; node != nil {
 		nodeMap[rootUID] = node
 		uidQueue = append(uidQueue, rootUID)
 	}
@@ -199,7 +288,7 @@ func resolveDependents(objects []unstructuredv1.Unstructured, rootUID types.UID)
 		if node := nodeMap[uid]; node != nil {
 			dependents, ix := make([]types.UID, len(node.Dependents)), 0
 			for dUID := range node.Dependents {
-				nodeMap[dUID] = globalMap[dUID]
+				nodeMap[dUID] = globalMapByUID[dUID]
 				dependents[ix] = dUID
 				ix++
 			}
@@ -211,41 +300,41 @@ func resolveDependents(objects []unstructuredv1.Unstructured, rootUID types.UID)
 	return nodeMap
 }
 
-// getEventReferenceUIDs returns the UID of the object this Event is about & the
-// UID of a secondary object if it exist. The returned UID will be an empty
-// string if the reference doesn't exist.
-func getEventReferenceUIDs(n *Node) (types.UID, types.UID) {
-	var regUID, relUID string
+// getEventRelationships returns a map of relationships that this Event has with
+// other objects, based on what was referenced in its manifest.
+//nolint:unparam
+func getEventRelationships(n *Node) (*RelationshipMap, error) {
+	result := newRelationshipMap()
 	switch n.Group {
 	case "":
-		regUID = n.GetNestedString("involvedobject", "uid")
+		// RelationshipEventRegarding
+		regUID := types.UID(n.GetNestedString("involvedobject", "uid"))
+		result.AddDependencyByUID(regUID, RelationshipEventRegarding)
 	case "events.k8s.io":
-		regUID = n.GetNestedString("regarding", "uid")
-		relUID = n.GetNestedString("related", "uid")
+		// RelationshipEventRegarding
+		regUID := types.UID(n.GetNestedString("regarding", "uid"))
+		result.AddDependencyByUID(regUID, RelationshipEventRegarding)
+		// RelationshipEventRelated
+		relUID := types.UID(n.GetNestedString("related", "uid"))
+		result.AddDependencyByUID(relUID, RelationshipEventRelated)
 	}
-	return types.UID(regUID), types.UID(relUID)
+
+	return &result, nil
 }
 
-// getPodRelationships returns returns a map of relationships (keyed by the
-// nodes representing each object reference) that this Pod has.
+// getPodRelationships returns a map of relationships that this Pod has with
+// other objects, based on what was referenced in its manifest.
 //nolint:funlen,gocognit
-func getPodRelationships(n *Node) (map[string]RelationshipSet, error) {
+func getPodRelationships(n *Node) (*RelationshipMap, error) {
 	var pod corev1.Pod
 	err := runtime.DefaultUnstructuredConverter.FromUnstructured(n.UnstructuredContent(), &pod)
 	if err != nil {
 		return nil, err
 	}
 
-	var node Node
+	var ref ObjectReference
 	ns := pod.Namespace
-	result := map[string]RelationshipSet{}
-	addRelationship := func(r Relationship, n Node) {
-		k := n.Key()
-		if _, ok := result[k]; !ok {
-			result[k] = RelationshipSet{r: {}}
-		}
-		result[k][r] = struct{}{}
-	}
+	result := newRelationshipMap()
 
 	// RelationshipPodContainerEnv
 	var cList []corev1.Container
@@ -255,11 +344,11 @@ func getPodRelationships(n *Node) (map[string]RelationshipSet, error) {
 		for _, env := range c.EnvFrom {
 			switch {
 			case env.ConfigMapRef != nil:
-				node = Node{Kind: "ConfigMap", Name: env.ConfigMapRef.Name, Namespace: ns}
-				addRelationship(RelationshipPodContainerEnv, node)
+				ref = ObjectReference{Kind: "ConfigMap", Name: env.ConfigMapRef.Name, Namespace: ns}
+				result.AddDependencyByKey(ref.Key(), RelationshipPodContainerEnv)
 			case env.SecretRef != nil:
-				node = Node{Kind: "Secret", Name: env.SecretRef.Name, Namespace: ns}
-				addRelationship(RelationshipPodContainerEnv, node)
+				ref = ObjectReference{Kind: "Secret", Name: env.SecretRef.Name, Namespace: ns}
+				result.AddDependencyByKey(ref.Key(), RelationshipPodContainerEnv)
 			}
 		}
 		for _, env := range c.Env {
@@ -268,66 +357,66 @@ func getPodRelationships(n *Node) (map[string]RelationshipSet, error) {
 			}
 			switch {
 			case env.ValueFrom.ConfigMapKeyRef != nil:
-				node = Node{Kind: "ConfigMap", Name: env.ValueFrom.ConfigMapKeyRef.Name, Namespace: ns}
-				addRelationship(RelationshipPodContainerEnv, node)
+				ref = ObjectReference{Kind: "ConfigMap", Name: env.ValueFrom.ConfigMapKeyRef.Name, Namespace: ns}
+				result.AddDependencyByKey(ref.Key(), RelationshipPodContainerEnv)
 			case env.ValueFrom.SecretKeyRef != nil:
-				node = Node{Kind: "Secret", Name: env.ValueFrom.SecretKeyRef.Name, Namespace: ns}
-				addRelationship(RelationshipPodContainerEnv, node)
+				ref = ObjectReference{Kind: "Secret", Name: env.ValueFrom.SecretKeyRef.Name, Namespace: ns}
+				result.AddDependencyByKey(ref.Key(), RelationshipPodContainerEnv)
 			}
 		}
 	}
 
 	// RelationshipPodImagePullSecret
 	for _, ips := range pod.Spec.ImagePullSecrets {
-		node = Node{Kind: "Secret", Name: ips.Name, Namespace: ns}
-		addRelationship(RelationshipPodImagePullSecret, node)
+		ref = ObjectReference{Kind: "Secret", Name: ips.Name, Namespace: ns}
+		result.AddDependencyByKey(ref.Key(), RelationshipPodImagePullSecret)
 	}
 
 	// RelationshipPodNode
-	node = Node{Kind: "Node", Name: pod.Spec.NodeName}
-	addRelationship(RelationshipPodNode, node)
+	ref = ObjectReference{Kind: "Node", Name: pod.Spec.NodeName}
+	result.AddDependencyByKey(ref.Key(), RelationshipPodNode)
 
 	// RelationshipPodPriorityClass
 	if pc := pod.Spec.PriorityClassName; len(pc) != 0 {
-		node = Node{Group: "scheduling.k8s.io", Kind: "PriorityClass", Name: pc}
-		addRelationship(RelationshipPodPriorityClass, node)
+		ref = ObjectReference{Group: "scheduling.k8s.io", Kind: "PriorityClass", Name: pc}
+		result.AddDependencyByKey(ref.Key(), RelationshipPodPriorityClass)
 	}
 
 	// RelationshipPodRuntimeClass
 	if rc := pod.Spec.RuntimeClassName; rc != nil && len(*rc) != 0 {
-		node = Node{Group: "node.k8s.io", Kind: "RuntimeClass", Name: *rc}
-		addRelationship(RelationshipPodRuntimeClass, node)
+		ref = ObjectReference{Group: "node.k8s.io", Kind: "RuntimeClass", Name: *rc}
+		result.AddDependencyByKey(ref.Key(), RelationshipPodRuntimeClass)
 	}
 
 	// RelationshipPodServiceAccount
-	node = Node{Kind: "ServiceAccount", Name: pod.Spec.ServiceAccountName, Namespace: ns}
-	addRelationship(RelationshipPodServiceAccount, node)
+	ref = ObjectReference{Kind: "ServiceAccount", Name: pod.Spec.ServiceAccountName, Namespace: ns}
+	result.AddDependencyByKey(ref.Key(), RelationshipPodServiceAccount)
 
 	// RelationshipPodVolume
 	for _, v := range pod.Spec.Volumes {
 		switch {
 		case v.ConfigMap != nil:
-			node = Node{Kind: "ConfigMap", Name: v.ConfigMap.Name, Namespace: ns}
-			addRelationship(RelationshipPodVolume, node)
+			ref = ObjectReference{Kind: "ConfigMap", Name: v.ConfigMap.Name, Namespace: ns}
+			result.AddDependencyByKey(ref.Key(), RelationshipPodVolume)
 		case v.PersistentVolumeClaim != nil:
-			node = Node{Kind: "PersistentVolumeClaim", Name: v.PersistentVolumeClaim.ClaimName, Namespace: ns}
-			addRelationship(RelationshipPodVolume, node)
+			ref = ObjectReference{Kind: "PersistentVolumeClaim", Name: v.PersistentVolumeClaim.ClaimName, Namespace: ns}
+			result.AddDependencyByKey(ref.Key(), RelationshipPodVolume)
 		case v.Secret != nil:
-			node = Node{Kind: "Secret", Name: v.Secret.SecretName, Namespace: ns}
-			addRelationship(RelationshipPodVolume, node)
+			ref = ObjectReference{Kind: "Secret", Name: v.Secret.SecretName, Namespace: ns}
+			result.AddDependencyByKey(ref.Key(), RelationshipPodVolume)
 		case v.Projected != nil:
 			for _, src := range v.Projected.Sources {
 				switch {
 				case src.ConfigMap != nil:
-					node = Node{Kind: "ConfigMap", Name: src.ConfigMap.Name, Namespace: ns}
-					addRelationship(RelationshipPodVolume, node)
+					ref = ObjectReference{Kind: "ConfigMap", Name: src.ConfigMap.Name, Namespace: ns}
+					result.AddDependencyByKey(ref.Key(), RelationshipPodVolume)
 				case src.Secret != nil:
-					node = Node{Kind: "Secret", Name: src.Secret.Name, Namespace: ns}
-					addRelationship(RelationshipPodVolume, node)
+					ref = ObjectReference{Kind: "Secret", Name: src.Secret.Name, Namespace: ns}
+					result.AddDependencyByKey(ref.Key(), RelationshipPodVolume)
 				}
 			}
 		}
 	}
 
-	return result, nil
+	return &result, nil
 }
