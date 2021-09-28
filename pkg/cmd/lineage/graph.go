@@ -153,8 +153,11 @@ const (
 	RelationshipPodNode            Relationship = "PodNode"
 	RelationshipPodPriorityClass   Relationship = "PodPriorityClass"
 	RelationshipPodRuntimeClass    Relationship = "PodRuntimeClass"
-	RelationshipPodServiceAccount  Relationship = "PodServiceAccount"
 	RelationshipPodVolume          Relationship = "PodVolume"
+
+	// Kubernetes ServiceAccount relationships.
+	RelationshipServiceAccountSecret          Relationship = "ServiceAccountSecret"
+	RelationshipServiceAccountImagePullSecret Relationship = "ServiceAccountImagePullSecret"
 )
 
 // resolveDependents resolves all dependents of the provided root object and
@@ -257,6 +260,13 @@ func resolveDependents(objects []unstructuredv1.Unstructured, rootUID types.UID)
 			rmap, err = getPodRelationships(node)
 			if err != nil {
 				klog.V(4).Infof("Failed to get relationships for pod named \"%s\" in namespace \"%s\": %s", node.Name, node.Namespace, err)
+				continue
+			}
+		// Populate dependents based on ServiceAccount relationships
+		case node.Group == "" && node.Kind == "ServiceAccount":
+			rmap, err = getServiceAccountRelationships(node)
+			if err != nil {
+				klog.V(4).Infof("Failed to get relationships for serviceaccount named \"%s\" in namespace \"%s\": %s", node.Name, node.Namespace, err)
 				continue
 			}
 		default:
@@ -388,10 +398,6 @@ func getPodRelationships(n *Node) (*RelationshipMap, error) {
 		result.AddDependencyByKey(ref.Key(), RelationshipPodRuntimeClass)
 	}
 
-	// RelationshipPodServiceAccount
-	ref = ObjectReference{Kind: "ServiceAccount", Name: pod.Spec.ServiceAccountName, Namespace: ns}
-	result.AddDependencyByKey(ref.Key(), RelationshipPodServiceAccount)
-
 	// RelationshipPodVolume
 	for _, v := range pod.Spec.Volumes {
 		switch {
@@ -416,6 +422,35 @@ func getPodRelationships(n *Node) (*RelationshipMap, error) {
 				}
 			}
 		}
+	}
+
+	return &result, nil
+}
+
+// getServiceAccountRelationships returns a map of relationships that this
+// ServiceAccount has with other objects, based on what was referenced in its
+// manifest.
+func getServiceAccountRelationships(n *Node) (*RelationshipMap, error) {
+	var sa corev1.ServiceAccount
+	err := runtime.DefaultUnstructuredConverter.FromUnstructured(n.UnstructuredContent(), &sa)
+	if err != nil {
+		return nil, err
+	}
+
+	var ref ObjectReference
+	ns := sa.Namespace
+	result := newRelationshipMap()
+
+	// RelationshipServiceAccountImagePullSecret
+	for _, s := range sa.ImagePullSecrets {
+		ref = ObjectReference{Kind: "Secret", Name: s.Name, Namespace: ns}
+		result.AddDependencyByKey(ref.Key(), RelationshipServiceAccountImagePullSecret)
+	}
+
+	// RelationshipServiceAccountSecret
+	for _, s := range sa.Secrets {
+		ref = ObjectReference{Kind: "Secret", Name: s.Name, Namespace: ns}
+		result.AddDependentByKey(ref.Key(), RelationshipServiceAccountSecret)
 	}
 
 	return &result, nil

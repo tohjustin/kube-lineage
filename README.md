@@ -35,6 +35,7 @@ List of supported relationships used for discovering dependent objects:
   - [Controller References](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/api-machinery/controller-ref.md) & [Owner References](https://kubernetes.io/docs/concepts/overview/working-with-objects/owners-dependents/)
   - [Event References](https://kubernetes.io/docs/reference/kubernetes-api/cluster-resources/event-v1/)
   - [Pod References](https://kubernetes.io/docs/reference/kubernetes-api/workload-resources/pod-v1/)
+  - [ServiceAccount References](https://kubernetes.io/docs/reference/kubernetes-api/authentication-resources/service-account-v1/)
 - Helm (Coming Soon)
 
 ## Installation
