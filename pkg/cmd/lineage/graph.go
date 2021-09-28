@@ -147,6 +147,10 @@ const (
 	RelationshipControllerRef Relationship = "ControllerReference"
 	RelationshipOwnerRef      Relationship = "OwnerReference"
 
+	// Kubernetes PersistentVolume & PersistentVolumeClaim relationships.
+	RelationshipPersistentVolumeClaim        Relationship = "PersistentVolumeClaim"
+	RelationshipPersistentVolumeStorageClass Relationship = "PersistentVolumeStorageClass"
+
 	// Kubernetes Pod relationships.
 	RelationshipPodContainerEnv    Relationship = "PodContainerEnvironment"
 	RelationshipPodImagePullSecret Relationship = "PodImagePullSecret" //nolint:gosec
@@ -255,6 +259,20 @@ func resolveDependents(objects []unstructuredv1.Unstructured, rootUID types.UID)
 				klog.V(4).Infof("Failed to get relationships for event named \"%s\" in namespace \"%s\": %s", node.Name, node.Namespace, err)
 				continue
 			}
+		// Populate dependents based on PersistentVolume relationships
+		case node.Group == "" && node.Kind == "PersistentVolume":
+			rmap, err = getPersistentVolumeRelationships(node)
+			if err != nil {
+				klog.V(4).Infof("Failed to get relationships for persistentvolume named \"%s\": %s", node.Name, err)
+				continue
+			}
+		// Populate dependents based on PersistentVolumeClaim relationships
+		case node.Group == "" && node.Kind == "PersistentVolumeClaim":
+			rmap, err = getPersistentVolumeClaimRelationships(node)
+			if err != nil {
+				klog.V(4).Infof("Failed to get relationships for persistentvolumeclaim named \"%s\" in namespace \"%s\": %s", node.Name, node.Namespace, err)
+				continue
+			}
 		// Populate dependents based on Pod relationships
 		case node.Group == "" && node.Kind == "Pod":
 			rmap, err = getPodRelationships(node)
@@ -327,6 +345,57 @@ func getEventRelationships(n *Node) (*RelationshipMap, error) {
 		// RelationshipEventRelated
 		relUID := types.UID(n.GetNestedString("related", "uid"))
 		result.AddDependencyByUID(relUID, RelationshipEventRelated)
+	}
+
+	return &result, nil
+}
+
+// getPersistentVolumeRelationships returns a map of relationships that this
+// PersistentVolume has with other objects, based on what was referenced in its
+// manifest.
+func getPersistentVolumeRelationships(n *Node) (*RelationshipMap, error) {
+	var pv corev1.PersistentVolume
+	err := runtime.DefaultUnstructuredConverter.FromUnstructured(n.UnstructuredContent(), &pv)
+	if err != nil {
+		return nil, err
+	}
+
+	var ref ObjectReference
+	ns := pv.Namespace
+	result := newRelationshipMap()
+
+	// RelationshipPersistentVolumeClaim
+	if pvcRef := pv.Spec.ClaimRef; pvcRef != nil {
+		ref = ObjectReference{Kind: "PersistentVolumeClaim", Name: pvcRef.Name, Namespace: ns}
+		result.AddDependentByKey(ref.Key(), RelationshipPersistentVolumeClaim)
+	}
+
+	// RelationshipPersistentVolumeStorageClass
+	if sc := pv.Spec.StorageClassName; len(sc) > 0 {
+		ref = ObjectReference{Group: "storage.k8s.io", Kind: "StorageClass", Name: sc}
+		result.AddDependencyByKey(ref.Key(), RelationshipPersistentVolumeStorageClass)
+	}
+
+	return &result, nil
+}
+
+// getPersistentVolumeClaimRelationships returns a map of relationships that
+// this PersistentVolumeClaim has with other objects, based on what was
+// referenced in its manifest.
+func getPersistentVolumeClaimRelationships(n *Node) (*RelationshipMap, error) {
+	var pvc corev1.PersistentVolumeClaim
+	err := runtime.DefaultUnstructuredConverter.FromUnstructured(n.UnstructuredContent(), &pvc)
+	if err != nil {
+		return nil, err
+	}
+
+	var ref ObjectReference
+	result := newRelationshipMap()
+
+	// RelationshipPersistentVolumeClaim
+	if pv := pvc.Spec.VolumeName; len(pv) > 0 {
+		ref = ObjectReference{Kind: "PersistentVolume", Name: pv}
+		result.AddDependencyByKey(ref.Key(), RelationshipPersistentVolumeClaim)
 	}
 
 	return &result, nil
