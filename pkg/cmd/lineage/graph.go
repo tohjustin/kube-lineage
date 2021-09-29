@@ -9,10 +9,33 @@ import (
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	unstructuredv1 "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
 )
+
+// ObjectLabelSelectorKey is a compact representation of an ObjectLabelSelector.
+// Typically used as key types for maps.
+type ObjectLabelSelectorKey string
+
+// ObjectLabelSelector is a reference to a collection of Kubernetes objects.
+type ObjectLabelSelector struct {
+	Group     string
+	Kind      string
+	Namespace string
+	Selector  map[string]string
+}
+
+// Key converts the ObjectLabelSelector into a ObjectLabelSelectorKey.
+func (o *ObjectLabelSelector) Key() ObjectLabelSelectorKey {
+	k := fmt.Sprintf("%s/%s/%s/%s", o.Group, o.Kind, o.Namespace, labels.Set(o.Selector).String())
+	return ObjectLabelSelectorKey(k)
+}
+
+// ObjectReferenceKey is a compact representation of an ObjectReference.
+// Typically used as key types for maps.
+type ObjectReferenceKey string
 
 // ObjectReference is a reference to a Kubernetes object.
 type ObjectReference struct {
@@ -21,10 +44,6 @@ type ObjectReference struct {
 	Namespace string
 	Name      string
 }
-
-// ObjectReferenceKey is a compact representation of an ObjectReference.
-// Typically used as key types for in maps.
-type ObjectReferenceKey string
 
 // Key converts the ObjectReference into a ObjectReferenceKey.
 func (o *ObjectReference) Key() ObjectReferenceKey {
@@ -57,18 +76,24 @@ func (s RelationshipSet) List() []string {
 // RelationshipMap contains a map of relationships a Kubernetes object has with
 // other objects in the cluster.
 type RelationshipMap struct {
-	DependenciesByRef map[ObjectReferenceKey]RelationshipSet
-	DependenciesByUID map[types.UID]RelationshipSet
-	DependentsByRef   map[ObjectReferenceKey]RelationshipSet
-	DependentsByUID   map[types.UID]RelationshipSet
+	DependenciesByLabelSelector map[ObjectLabelSelectorKey]RelationshipSet
+	DependenciesByRef           map[ObjectReferenceKey]RelationshipSet
+	DependenciesByUID           map[types.UID]RelationshipSet
+	DependentsByLabelSelector   map[ObjectLabelSelectorKey]RelationshipSet
+	DependentsByRef             map[ObjectReferenceKey]RelationshipSet
+	DependentsByUID             map[types.UID]RelationshipSet
+	ObjectLabelSelectorByKey    map[ObjectLabelSelectorKey]ObjectLabelSelector
 }
 
 func newRelationshipMap() RelationshipMap {
 	return RelationshipMap{
-		DependenciesByRef: map[ObjectReferenceKey]RelationshipSet{},
-		DependenciesByUID: map[types.UID]RelationshipSet{},
-		DependentsByRef:   map[ObjectReferenceKey]RelationshipSet{},
-		DependentsByUID:   map[types.UID]RelationshipSet{},
+		DependenciesByLabelSelector: map[ObjectLabelSelectorKey]RelationshipSet{},
+		DependenciesByRef:           map[ObjectReferenceKey]RelationshipSet{},
+		DependenciesByUID:           map[types.UID]RelationshipSet{},
+		DependentsByLabelSelector:   map[ObjectLabelSelectorKey]RelationshipSet{},
+		DependentsByRef:             map[ObjectReferenceKey]RelationshipSet{},
+		DependentsByUID:             map[types.UID]RelationshipSet{},
+		ObjectLabelSelectorByKey:    map[ObjectLabelSelectorKey]ObjectLabelSelector{},
 	}
 }
 
@@ -77,6 +102,15 @@ func (m *RelationshipMap) AddDependencyByKey(k ObjectReferenceKey, r Relationshi
 		m.DependenciesByRef[k] = RelationshipSet{}
 	}
 	m.DependenciesByRef[k][r] = struct{}{}
+}
+
+func (m *RelationshipMap) AddDependencyByLabelSelector(o ObjectLabelSelector, r Relationship) {
+	k := o.Key()
+	if _, ok := m.DependenciesByLabelSelector[k]; !ok {
+		m.DependenciesByLabelSelector[k] = RelationshipSet{}
+	}
+	m.DependenciesByLabelSelector[k][r] = struct{}{}
+	m.ObjectLabelSelectorByKey[k] = o
 }
 
 func (m *RelationshipMap) AddDependencyByUID(uid types.UID, r Relationship) {
@@ -91,6 +125,15 @@ func (m *RelationshipMap) AddDependentByKey(k ObjectReferenceKey, r Relationship
 		m.DependentsByRef[k] = RelationshipSet{}
 	}
 	m.DependentsByRef[k][r] = struct{}{}
+}
+
+func (m *RelationshipMap) AddDependentByLabelSelector(o ObjectLabelSelector, r Relationship) {
+	k := o.Key()
+	if _, ok := m.DependentsByLabelSelector[k]; !ok {
+		m.DependentsByLabelSelector[k] = RelationshipSet{}
+	}
+	m.DependentsByLabelSelector[k][r] = struct{}{}
+	m.ObjectLabelSelectorByKey[k] = o
 }
 
 func (m *RelationshipMap) AddDependentByUID(uid types.UID, r Relationship) {
@@ -168,6 +211,9 @@ const (
 	RelationshipPodRuntimeClass    Relationship = "PodRuntimeClass"
 	RelationshipPodVolume          Relationship = "PodVolume"
 
+	// Kubernetes Service relationships.
+	RelationshipService Relationship = "Service"
+
 	// Kubernetes ServiceAccount relationships.
 	RelationshipServiceAccountSecret          Relationship = "ServiceAccountSecret"
 	RelationshipServiceAccountImagePullSecret Relationship = "ServiceAccountImagePullSecret"
@@ -211,16 +257,24 @@ func resolveDependents(objects []unstructuredv1.Unstructured, rootUID types.UID)
 		}
 	}
 
-	updateRelationships := func(node *Node, rmap *RelationshipMap) {
-		for k, rset := range rmap.DependenciesByRef {
-			if n, ok := globalMapByKey[k]; ok {
-				for r := range rset {
-					n.AddDependent(node.UID, r)
+	resolveSelectorToNodes := func(o ObjectLabelSelector) []*Node {
+		selector, err := labels.ValidatedSelectorFromSet(labels.Set(o.Selector))
+		if err != nil {
+			return nil
+		}
+		var result []*Node
+		for _, n := range globalMapByUID {
+			if n.Group == o.Group && n.Kind == o.Kind && n.Namespace == o.Namespace {
+				if ok := selector.Matches(labels.Set(n.GetLabels())); ok {
+					result = append(result, n)
 				}
 			}
 		}
-		for uid, rset := range rmap.DependenciesByUID {
-			if n, ok := globalMapByUID[uid]; ok {
+		return result
+	}
+	updateRelationships := func(node *Node, rmap *RelationshipMap) {
+		for k, rset := range rmap.DependenciesByRef {
+			if n, ok := globalMapByKey[k]; ok {
 				for r := range rset {
 					n.AddDependent(node.UID, r)
 				}
@@ -230,6 +284,31 @@ func resolveDependents(objects []unstructuredv1.Unstructured, rootUID types.UID)
 			if n, ok := globalMapByKey[k]; ok {
 				for r := range rset {
 					node.AddDependent(n.UID, r)
+				}
+			}
+		}
+		for k, rset := range rmap.DependenciesByLabelSelector {
+			if sel, ok := rmap.ObjectLabelSelectorByKey[k]; ok {
+				for _, n := range resolveSelectorToNodes(sel) {
+					for r := range rset {
+						n.AddDependent(node.UID, r)
+					}
+				}
+			}
+		}
+		for k, rset := range rmap.DependentsByLabelSelector {
+			if sel, ok := rmap.ObjectLabelSelectorByKey[k]; ok {
+				for _, n := range resolveSelectorToNodes(sel) {
+					for r := range rset {
+						node.AddDependent(n.UID, r)
+					}
+				}
+			}
+		}
+		for uid, rset := range rmap.DependenciesByUID {
+			if n, ok := globalMapByUID[uid]; ok {
+				for r := range rset {
+					n.AddDependent(node.UID, r)
 				}
 			}
 		}
@@ -301,6 +380,13 @@ func resolveDependents(objects []unstructuredv1.Unstructured, rootUID types.UID)
 			rmap, err = getPodRelationships(node)
 			if err != nil {
 				klog.V(4).Infof("Failed to get relationships for pod named \"%s\" in namespace \"%s\": %s", node.Name, node.Namespace, err)
+				continue
+			}
+		// Populate dependents based on Service relationships
+		case node.Group == "" && node.Kind == "Service":
+			rmap, err = getServiceRelationships(node)
+			if err != nil {
+				klog.V(4).Infof("Failed to get relationships for service named \"%s\" in namespace \"%s\": %s", node.Name, node.Namespace, err)
 				continue
 			}
 		// Populate dependents based on ServiceAccount relationships
@@ -650,6 +736,27 @@ func getPodRelationships(n *Node) (*RelationshipMap, error) {
 			}
 		}
 	}
+
+	return &result, nil
+}
+
+// getServiceRelationships returns a map of relationships that this
+// Service has with other objects, based on what was referenced in its
+// manifest.
+func getServiceRelationships(n *Node) (*RelationshipMap, error) {
+	var svc corev1.Service
+	err := runtime.DefaultUnstructuredConverter.FromUnstructured(n.UnstructuredContent(), &svc)
+	if err != nil {
+		return nil, err
+	}
+
+	var sel ObjectLabelSelector
+	ns := svc.Namespace
+	result := newRelationshipMap()
+
+	// RelationshipServiceSelector
+	sel = ObjectLabelSelector{Kind: "Pod", Namespace: ns, Selector: svc.Spec.Selector}
+	result.AddDependencyByLabelSelector(sel, RelationshipService)
 
 	return &result, nil
 }
