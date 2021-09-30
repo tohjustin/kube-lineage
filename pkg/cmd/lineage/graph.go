@@ -337,30 +337,6 @@ func resolveDependents(objects []unstructuredv1.Unstructured, rootUID types.UID)
 	var err error
 	for _, node := range globalMapByUID {
 		switch {
-		// Populate dependents based on Event relationships
-		// TODO: It's possible to have events to be in a different namespace from the
-		//       its referenced object, so update the resource fetching logic to
-		//       always try to fetch events at the cluster scope for event resources
-		case (node.Group == "" || node.Group == "events.k8s.io") && node.Kind == "Event":
-			rmap, err = getEventRelationships(node)
-			if err != nil {
-				klog.V(4).Infof("Failed to get relationships for event named \"%s\" in namespace \"%s\": %s", node.Name, node.Namespace, err)
-				continue
-			}
-		// Populate dependents based on Ingress relationships
-		case (node.Group == "extensions" || node.Group == "networking.k8s.io") && node.Kind == "Ingress":
-			rmap, err = getIngressRelationships(node)
-			if err != nil {
-				klog.V(4).Infof("Failed to get relationships for ingress named \"%s\" in namespace \"%s\": %s", node.Name, node.Namespace, err)
-				continue
-			}
-		// Populate dependents based on IngressClass relationships
-		case node.Group == "networking.k8s.io" && node.Kind == "IngressClass":
-			rmap, err = getIngressClassRelationships(node)
-			if err != nil {
-				klog.V(4).Infof("Failed to get relationships for ingressclass named \"%s\": %s", node.Name, err)
-				continue
-			}
 		// Populate dependents based on PersistentVolume relationships
 		case node.Group == "" && node.Kind == "PersistentVolume":
 			rmap, err = getPersistentVolumeRelationships(node)
@@ -394,6 +370,30 @@ func resolveDependents(objects []unstructuredv1.Unstructured, rootUID types.UID)
 			rmap, err = getServiceAccountRelationships(node)
 			if err != nil {
 				klog.V(4).Infof("Failed to get relationships for serviceaccount named \"%s\" in namespace \"%s\": %s", node.Name, node.Namespace, err)
+				continue
+			}
+		// Populate dependents based on Event relationships
+		// TODO: It's possible to have events to be in a different namespace from the
+		//       its referenced object, so update the resource fetching logic to
+		//       always try to fetch events at the cluster scope for event resources
+		case (node.Group == "events.k8s.io" || node.Group == "") && node.Kind == "Event":
+			rmap, err = getEventRelationships(node)
+			if err != nil {
+				klog.V(4).Infof("Failed to get relationships for event named \"%s\" in namespace \"%s\": %s", node.Name, node.Namespace, err)
+				continue
+			}
+		// Populate dependents based on Ingress relationships
+		case (node.Group == "networking.k8s.io" || node.Group == "extensions") && node.Kind == "Ingress":
+			rmap, err = getIngressRelationships(node)
+			if err != nil {
+				klog.V(4).Infof("Failed to get relationships for ingress named \"%s\" in namespace \"%s\": %s", node.Name, node.Namespace, err)
+				continue
+			}
+		// Populate dependents based on IngressClass relationships
+		case node.Group == "networking.k8s.io" && node.Kind == "IngressClass":
+			rmap, err = getIngressClassRelationships(node)
+			if err != nil {
+				klog.V(4).Infof("Failed to get relationships for ingressclass named \"%s\": %s", node.Name, err)
 				continue
 			}
 		default:
