@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 
+	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
 	extensionsv1beta1 "k8s.io/api/extensions/v1beta1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -195,6 +196,9 @@ const (
 	RelationshipIngressService         Relationship = "IngressService"
 	RelationshipIngressTLSSecret       Relationship = "IngressTLSSecret"
 
+	// Kubernetes MutatingWebhookConfiguration & ValidatingWebhookConfiguration relationships.
+	RelationshipWebhookConfigurationService Relationship = "WebhookConfigurationService"
+
 	// Kubernetes Owner-Dependent relationships.
 	RelationshipControllerRef Relationship = "ControllerReference"
 	RelationshipOwnerRef      Relationship = "OwnerReference"
@@ -370,6 +374,20 @@ func resolveDependents(objects []unstructuredv1.Unstructured, rootUID types.UID)
 			rmap, err = getServiceAccountRelationships(node)
 			if err != nil {
 				klog.V(4).Infof("Failed to get relationships for serviceaccount named \"%s\" in namespace \"%s\": %s", node.Name, node.Namespace, err)
+				continue
+			}
+		// Populate dependents based on MutatingWebhookConfiguration relationships
+		case node.Group == "admissionregistration.k8s.io" && node.Kind == "MutatingWebhookConfiguration":
+			rmap, err = getMutatingWebhookConfigurationRelationships(node)
+			if err != nil {
+				klog.V(4).Infof("Failed to get relationships for mutatingwebhookconfiguration named \"%s\": %s", node.Name, err)
+				continue
+			}
+		// Populate dependents based on ValidatingWebhookConfiguration relationships
+		case node.Group == "admissionregistration.k8s.io" && node.Kind == "ValidatingWebhookConfiguration":
+			rmap, err = getValidatingWebhookConfigurationRelationships(node)
+			if err != nil {
+				klog.V(4).Infof("Failed to get relationships for validatingwebhookconfiguration named \"%s\": %s", node.Name, err)
 				continue
 			}
 		// Populate dependents based on Event relationships
@@ -594,6 +612,30 @@ func getIngressClassRelationships(n *Node) (*RelationshipMap, error) {
 	return &result, nil
 }
 
+// getMutatingWebhookConfigurationRelationships returns a map of relationships
+// that this MutatingWebhookConfiguration has with other objects, based on what
+// was referenced in its manifest.
+func getMutatingWebhookConfigurationRelationships(n *Node) (*RelationshipMap, error) {
+	var mwc admissionregistrationv1.MutatingWebhookConfiguration
+	err := runtime.DefaultUnstructuredConverter.FromUnstructured(n.UnstructuredContent(), &mwc)
+	if err != nil {
+		return nil, err
+	}
+
+	var ref ObjectReference
+	result := newRelationshipMap()
+
+	// RelationshipWebhookConfigurationService
+	for _, wh := range mwc.Webhooks {
+		if svc := wh.ClientConfig.Service; svc != nil {
+			ref = ObjectReference{Kind: "Service", Namespace: svc.Namespace, Name: svc.Name}
+			result.AddDependencyByKey(ref.Key(), RelationshipWebhookConfigurationService)
+		}
+	}
+
+	return &result, nil
+}
+
 // getPersistentVolumeRelationships returns a map of relationships that this
 // PersistentVolume has with other objects, based on what was referenced in its
 // manifest.
@@ -785,6 +827,30 @@ func getServiceAccountRelationships(n *Node) (*RelationshipMap, error) {
 	for _, s := range sa.Secrets {
 		ref = ObjectReference{Kind: "Secret", Name: s.Name, Namespace: ns}
 		result.AddDependentByKey(ref.Key(), RelationshipServiceAccountSecret)
+	}
+
+	return &result, nil
+}
+
+// getValidatingWebhookConfigurationRelationships returns a map of relationships
+// that this ValidatingWebhookConfiguration has with other objects, based on
+// what was referenced in its manifest.
+func getValidatingWebhookConfigurationRelationships(n *Node) (*RelationshipMap, error) {
+	var vwc admissionregistrationv1.ValidatingWebhookConfiguration
+	err := runtime.DefaultUnstructuredConverter.FromUnstructured(n.UnstructuredContent(), &vwc)
+	if err != nil {
+		return nil, err
+	}
+
+	var ref ObjectReference
+	result := newRelationshipMap()
+
+	// RelationshipWebhookConfigurationService
+	for _, wh := range vwc.Webhooks {
+		if svc := wh.ClientConfig.Service; svc != nil {
+			ref = ObjectReference{Kind: "Service", Namespace: svc.Namespace, Name: svc.Name}
+			result.AddDependencyByKey(ref.Key(), RelationshipWebhookConfigurationService)
+		}
 	}
 
 	return &result, nil
