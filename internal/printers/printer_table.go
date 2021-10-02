@@ -1,4 +1,4 @@
-package lineage
+package printers
 
 import (
 	"fmt"
@@ -15,6 +15,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/duration"
 	"k8s.io/client-go/util/jsonpath"
+
+	"github.com/tohjustin/kubectl-lineage/internal/graph"
 )
 
 const (
@@ -38,32 +40,6 @@ var (
 	// "Ready" condition status.
 	objectReadyStatusJSONPath = newJSONPath("status", "{.status.conditions[?(@.type==\"Ready\")].status}")
 )
-
-// NodeList contains a list of nodes.
-type NodeList []*Node
-
-func (n NodeList) Len() int {
-	return len(n)
-}
-
-func (n NodeList) Less(i, j int) bool {
-	// Sort nodes in following order: Namespace, Kind, Group, Name
-	a, b := n[i], n[j]
-	if a.Namespace != b.Namespace {
-		return a.Namespace < b.Namespace
-	}
-	if a.Kind != b.Kind {
-		return a.Kind < b.Kind
-	}
-	if a.Group != b.Group {
-		return a.Group < b.Group
-	}
-	return a.Name < b.Name
-}
-
-func (n NodeList) Swap(i, j int) {
-	n[i], n[j] = n[j], n[i]
-}
 
 // newJSONPath returns a JSONPath object created from parsing the provided JSON
 // path expression.
@@ -313,7 +289,7 @@ func getStatefulSetReadyStatus(u *unstructuredv1.Unstructured) (string, string, 
 
 // nodeToTableRow converts the provided node into a table row.
 //nolint:gocognit,goconst
-func nodeToTableRow(node *Node, rset RelationshipSet, namePrefix string, showGroupFn func(kind string) bool) metav1.TableRow {
+func nodeToTableRow(node *graph.Node, rset graph.RelationshipSet, namePrefix string, showGroupFn func(kind string) bool) metav1.TableRow {
 	var name, ready, status, age string
 	var relationships interface{}
 
@@ -364,8 +340,8 @@ func nodeToTableRow(node *Node, rset RelationshipSet, namePrefix string, showGro
 	}
 }
 
-// printNode converts the provided node & its dependents into table rows.
-func printNode(nodeMap NodeMap, root *Node, withGroup bool) ([]metav1.TableRow, error) {
+// PrintNode converts the provided node & its dependents into table rows.
+func PrintNode(nodeMap graph.NodeMap, root *graph.Node, withGroup bool) (*metav1.Table, error) {
 	// Track every object kind in the node map & the groups that they belong to.
 	kindToGroupSetMap := map[string](map[string]struct{}){}
 	for _, node := range nodeMap {
@@ -384,8 +360,8 @@ func printNode(nodeMap NodeMap, root *Node, withGroup bool) ([]metav1.TableRow, 
 	}
 	// Sorts the list of UIDs based on the underlying object in following order:
 	// Namespace, Kind, Group, Name
-	sortDependentsFn := func(d map[types.UID]RelationshipSet) []types.UID {
-		nodes, ix := make(NodeList, len(d)), 0
+	sortDependentsFn := func(d map[types.UID]graph.RelationshipSet) []types.UID {
+		nodes, ix := make(graph.NodeList, len(d)), 0
 		for uid := range d {
 			nodes[ix] = nodeMap[uid]
 			ix++
@@ -407,17 +383,21 @@ func printNode(nodeMap NodeMap, root *Node, withGroup bool) ([]metav1.TableRow, 
 	}
 	rows = append(rows, row)
 	rows = append(rows, dependentRows...)
+	table := metav1.Table{
+		ColumnDefinitions: objectColumnDefinitions,
+		Rows:              rows,
+	}
 
-	return rows, nil
+	return &table, nil
 }
 
 // printNodeDependents converts the provided node's dependents into table rows.
 func printNodeDependents(
-	nodeMap NodeMap,
+	nodeMap graph.NodeMap,
 	uidSet map[types.UID]struct{},
-	node *Node,
+	node *graph.Node,
 	prefix string,
-	sortDependentsFn func(d map[types.UID]RelationshipSet) []types.UID,
+	sortDependentsFn func(d map[types.UID]graph.RelationshipSet) []types.UID,
 	showGroupFn func(kind string) bool) ([]metav1.TableRow, error) {
 	rows := make([]metav1.TableRow, 0, len(nodeMap))
 

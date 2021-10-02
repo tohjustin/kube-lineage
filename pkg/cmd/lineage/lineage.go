@@ -25,6 +25,10 @@ import (
 	"k8s.io/klog/v2"
 	cmdutil "k8s.io/kubectl/pkg/cmd/util"
 	"k8s.io/kubectl/pkg/util/templates"
+
+	"github.com/tohjustin/kubectl-lineage/internal/graph"
+	"github.com/tohjustin/kubectl-lineage/internal/log"
+	lineageprinters "github.com/tohjustin/kubectl-lineage/internal/printers"
 )
 
 var (
@@ -67,7 +71,7 @@ type CmdOptions struct {
 	DiscoveryClient discovery.DiscoveryInterface
 	Namespace       string
 
-	PrintFlags *PrintFlags
+	PrintFlags *lineageprinters.PrintFlags
 	ToPrinter  func(withGroup bool, withNamespace bool) (printers.ResourcePrinterFunc, error)
 
 	genericclioptions.IOStreams
@@ -124,7 +128,7 @@ func (r Resource) GroupVersionResource() schema.GroupVersionResource {
 func New(streams genericclioptions.IOStreams) *cobra.Command {
 	o := &CmdOptions{
 		ConfigFlags: NewConfigFlags(),
-		PrintFlags:  NewPrintFlags(),
+		PrintFlags:  lineageprinters.NewFlags(),
 		IOStreams:   streams,
 	}
 
@@ -145,7 +149,7 @@ func New(streams genericclioptions.IOStreams) *cobra.Command {
 
 	o.ConfigFlags.AddFlags(cmd.Flags())
 	o.PrintFlags.AddFlags(cmd.Flags())
-	addLogFlags(cmd.Flags())
+	log.AddFlags(cmd.Flags())
 
 	return cmd
 }
@@ -298,7 +302,7 @@ func (o *CmdOptions) Run() error {
 	objects = append(objects, *rootObject)
 
 	// Find all dependents of the root object
-	nodeMap := resolveDependents(objects, rootUID)
+	nodeMap := graph.ResolveDependents(objects, rootUID)
 
 	// Print output
 	return o.printObj(nodeMap, rootUID)
@@ -452,7 +456,7 @@ list_objects:
 }
 
 // printObj prints the root object & its dependents in table format.
-func (o *CmdOptions) printObj(nodeMap NodeMap, rootUID types.UID) error {
+func (o *CmdOptions) printObj(nodeMap graph.NodeMap, rootUID types.UID) error {
 	root, ok := nodeMap[rootUID]
 	if !ok {
 		return fmt.Errorf("requested object (uid: %s) not found in list of fetched objects", rootUID)
@@ -479,13 +483,9 @@ func (o *CmdOptions) printObj(nodeMap NodeMap, rootUID types.UID) error {
 	}
 
 	// Generate Table Rows for printing
-	rows, err := printNode(nodeMap, root, withGroup)
+	table, err := lineageprinters.PrintNode(nodeMap, root, withGroup)
 	if err != nil {
 		return err
-	}
-	table := &metav1.Table{
-		ColumnDefinitions: objectColumnDefinitions,
-		Rows:              rows,
 	}
 
 	return printer.PrintObj(table, o.Out)

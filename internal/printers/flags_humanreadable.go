@@ -1,4 +1,4 @@
-package lineage
+package printers
 
 import (
 	"github.com/spf13/pflag"

@@ -1,4 +1,4 @@
-package lineage
+package log
 
 import (
 	goflag "flag"
@@ -7,8 +7,8 @@ import (
 	"k8s.io/klog/v2"
 )
 
-// addLogFlags adds flags for logging.
-func addLogFlags(flags *pflag.FlagSet) {
+// AddFlags adds flags for logging.
+func AddFlags(flags *pflag.FlagSet) {
 	klogFlagSet := goflag.NewFlagSet("klog", goflag.ContinueOnError)
 	klog.InitFlags(klogFlagSet)
 	flags.AddGoFlagSet(klogFlagSet)

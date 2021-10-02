@@ -1,4 +1,4 @@
-package lineage
+package printers
 
 import (
 	"fmt"
@@ -73,9 +73,9 @@ func (f *PrintFlags) AddFlags(flags *pflag.FlagSet) {
 	}
 }
 
-// NewPrintFlags returns flags associated with human-readable printing,
-// with default values set.
-func NewPrintFlags() *PrintFlags {
+// NewFlags returns flags associated with human-readable printing, with default
+// values set.
+func NewFlags() *PrintFlags {
 	outputFormat := ""
 
 	return &PrintFlags{
