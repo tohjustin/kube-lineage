@@ -3,6 +3,8 @@ package lineage
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -26,21 +28,31 @@ import (
 )
 
 var (
-	cmdLong = templates.LongDesc(`
+	cmdName    = "kubectl-lineage"
+	cmdUse     = "COMMAND (TYPE[.VERSION][.GROUP] [NAME] | TYPE[.VERSION][.GROUP]/NAME) [flags]"
+	cmdExample = templates.Examples(`
+		# List all dependents of the deployment named "bar" in the current namespace
+		COMMAND deployments bar
+
+		# List all dependents of the cronjob named "bar" in namespace "foo"
+		COMMAND cronjobs.batch/bar -n foo
+
+		# List all dependents of the node named "k3d-dev-server" & the corresponding relationship type(s)
+		COMMAND node/k3d-dev-server -o wide`)
+	cmdShort = "Display all dependents of a Kubernetes object"
+	cmdLong  = templates.LongDesc(`
 		Display all dependents of a Kubernetes object.
 
 		TYPE is a Kubernetes resource. Shortcuts and groups will be resolved.
 		NAME is the name of a particular Kubernetes resource.`)
-	cmdExample = templates.Examples(`
-		# List all dependents of the deployment named "bar" in the current namespace
-		kubectl lineage deployments bar
-
-		# List all dependents of the cronjob named "bar" in namespace "foo"
-		kubectl lineage cronjobs.batch/bar -n foo
-
-		# List all dependents of the node named "k3d-dev-server" & the corresponding relationship type(s)
-		kubectl lineage node/k3d-dev-server -o wide`)
 )
+
+//nolint:gochecknoinits
+func init() {
+	if strings.HasPrefix(filepath.Base(os.Args[0]), "kubectl-") {
+		cmdName = "kubectl lineage"
+	}
+}
 
 // CmdOptions contains all the options for running the lineage command.
 type CmdOptions struct {
@@ -117,10 +129,10 @@ func New(streams genericclioptions.IOStreams) *cobra.Command {
 	}
 
 	cmd := &cobra.Command{
-		Use:                   "lineage (TYPE[.VERSION][.GROUP] [NAME] | TYPE[.VERSION][.GROUP]/NAME) [flags]",
-		Short:                 "Display all dependents of a Kubernetes object",
+		Use:                   strings.ReplaceAll(cmdUse, "COMMAND", cmdName),
+		Example:               strings.ReplaceAll(cmdExample, "COMMAND", cmdName),
+		Short:                 cmdShort,
 		Long:                  cmdLong,
-		Example:               cmdExample,
 		DisableFlagsInUseLine: true,
 		DisableSuggestions:    true,
 		SilenceUsage:          true,
