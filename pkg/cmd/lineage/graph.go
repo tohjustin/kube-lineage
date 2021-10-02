@@ -8,6 +8,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	extensionsv1beta1 "k8s.io/api/extensions/v1beta1"
 	networkingv1 "k8s.io/api/networking/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	unstructuredv1 "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
@@ -185,6 +186,12 @@ func (n *Node) GetNestedString(fields ...string) string {
 type NodeMap map[types.UID]*Node
 
 const (
+	// Kubernetes ClusterRoleBinding, RoleBinding relationships.
+	RelationshipClusterRoleBindingSubject Relationship = "ClusterRoleBindingSubject"
+	RelationshipClusterRoleBindingRole    Relationship = "ClusterRoleBindingRole"
+	RelationshipRoleBindingSubject        Relationship = "RoleBindingSubject"
+	RelationshipRoleBindingRole           Relationship = "RoleBindingRole"
+
 	// Kubernetes Event relationships.
 	RelationshipEventRegarding Relationship = "EventRegarding"
 	RelationshipEventRelated   Relationship = "EventRelated"
@@ -414,6 +421,23 @@ func resolveDependents(objects []unstructuredv1.Unstructured, rootUID types.UID)
 				klog.V(4).Infof("Failed to get relationships for ingressclass named \"%s\": %s", node.Name, err)
 				continue
 			}
+		// Populate dependents based on ClusterRoleBinding relationships
+		case node.Group == "rbac.authorization.k8s.io" && node.Kind == "ClusterRoleBinding":
+			rmap, err = getClusterRoleBindingRelationships(node)
+			if err != nil {
+				klog.V(4).Infof("Failed to get relationships for clusterrolebinding named \"%s\": %s", node.Name, err)
+				continue
+			}
+		// Populate dependents based on RoleBinding relationships
+		// TODO: It's possible to have rolebinding to reference clusterrole(s), so
+		//       update the resource fetching logic to always try to fetch
+		//       clusterroles
+		case node.Group == "rbac.authorization.k8s.io" && node.Kind == "RoleBinding":
+			rmap, err = getRoleBindingRelationships(node)
+			if err != nil {
+				klog.V(4).Infof("Failed to get relationships for rolebinding named \"%s\" in namespace \"%s\": %s: %s", node.Name, err)
+				continue
+			}
 		default:
 			continue
 		}
@@ -453,6 +477,34 @@ func resolveDependents(objects []unstructuredv1.Unstructured, rootUID types.UID)
 
 	klog.V(4).Infof("Resolved %d dependents for root object (uid: %s)", len(nodeMap)-1, rootUID)
 	return nodeMap
+}
+
+// getClusterRoleBindingRelationships returns a map of relationships that this
+// ClusterRoleBinding has with other objects, based on what was referenced in
+// its manifest.
+func getClusterRoleBindingRelationships(n *Node) (*RelationshipMap, error) {
+	var crb rbacv1.ClusterRoleBinding
+	err := runtime.DefaultUnstructuredConverter.FromUnstructured(n.UnstructuredContent(), &crb)
+	if err != nil {
+		return nil, err
+	}
+
+	var ref ObjectReference
+	result := newRelationshipMap()
+
+	// RelationshipClusterRoleBindingSubject
+	// TODO: Handle non-object type subjects such as user & group names
+	for _, s := range crb.Subjects {
+		ref = ObjectReference{Group: s.APIGroup, Kind: s.Kind, Namespace: s.Namespace, Name: s.Name}
+		result.AddDependentByKey(ref.Key(), RelationshipClusterRoleBindingSubject)
+	}
+
+	// RelationshipClusterRoleBindingRole
+	r := crb.RoleRef
+	ref = ObjectReference{Group: r.APIGroup, Kind: r.Kind, Name: r.Name}
+	result.AddDependencyByKey(ref.Key(), RelationshipClusterRoleBindingRole)
+
+	return &result, nil
 }
 
 // getEventRelationships returns a map of relationships that this Event has with
@@ -778,6 +830,35 @@ func getPodRelationships(n *Node) (*RelationshipMap, error) {
 			}
 		}
 	}
+
+	return &result, nil
+}
+
+// getRoleBindingRelationships returns a map of relationships that this
+// RoleBinding has with other objects, based on what was referenced in its
+// manifest.
+func getRoleBindingRelationships(n *Node) (*RelationshipMap, error) {
+	var rb rbacv1.RoleBinding
+	err := runtime.DefaultUnstructuredConverter.FromUnstructured(n.UnstructuredContent(), &rb)
+	if err != nil {
+		return nil, err
+	}
+
+	var ref ObjectReference
+	ns := rb.Namespace
+	result := newRelationshipMap()
+
+	// RelationshipRoleBindingSubject
+	// TODO: Handle non-object type subjects such as user & group names
+	for _, s := range rb.Subjects {
+		ref = ObjectReference{Group: s.APIGroup, Kind: s.Kind, Namespace: s.Namespace, Name: s.Name}
+		result.AddDependentByKey(ref.Key(), RelationshipRoleBindingSubject)
+	}
+
+	// RelationshipRoleBindingRole
+	r := rb.RoleRef
+	ref = ObjectReference{Group: r.APIGroup, Kind: r.Kind, Namespace: ns, Name: r.Name}
+	result.AddDependencyByKey(ref.Key(), RelationshipRoleBindingRole)
 
 	return &result, nil
 }
