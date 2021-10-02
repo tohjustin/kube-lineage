@@ -8,32 +8,42 @@
 A kubectl plugin to display all dependents of a Kubernetes object.
 
 ```shell
-$ kubectl lineage node k3d-dev-server-0
-NAMESPACE         NAME                           READY   STATUS         AGE
-                  Node/k3d-dev-server-0          True    KubeletReady   30m
-                  ├── CSINode/k3d-dev-server-0   -                      30m
-kube-node-lease   └── Lease/k3d-dev-server-0     -                      30m
+$ kubectl lineage deploy/coredns
+NAME                                           READY   STATUS    AGE
+Deployment/coredns                             1/1               30m
+└── ReplicaSet/coredns-5d69dc75db              1/1               30m
+    └── Pod/coredns-5d69dc75db-26wjw           1/1     Running   30m
+        └── Service/kube-dns                   -                 30m
+            └── EndpointSlice/kube-dns-pxh5w   -                 30m
 
-$ kubectl lineage svc/traefik
-NAME                                                  READY   STATUS    AGE
-Service/traefik                                       -                 30m
-├── DaemonSet/svclb-traefik                           1/1               30m
-│   ├── ControllerRevision/svclb-traefik-694565b64f   -                 30m
-│   └── Pod/svclb-traefik-rrpdf                       2/2     Running   30m
-└── EndpointSlice/traefik-klkwg                       -                 30m
+$ kubectl lineage node k3d-dev-server-1 -o wide
+NAMESPACE           NAME                                                 READY   STATUS         AGE   RELATIONSHIPS
+                    Node/k3d-dev-server-1                                True    KubeletReady   30m   -
+                    ├── CSINode/k3d-dev-server-1                         -                      30m   [OwnerReference]
+kube-node-lease     ├── Lease/k3d-dev-server-1                           -                      30m   [OwnerReference]
+kube-system         ├── Pod/metrics-server-7b4f8b595-mxtfp               1/1     Running        30m   [PodNode]
+kube-system         │   └── Service/metrics-server                       -                      30m   [Service]
+kube-system         │       └── EndpointSlice/metrics-server-lbhb9       -                      30m   [ControllerReference OwnerReference]
+monitoring-system   └── Pod/kube-state-metrics-6cb9b94fdf-bkz22          1/1     Running        25m   [PodNode]
+monitoring-system       └── Service/kube-state-metrics                   -                      25m   [Service]
+monitoring-system           └── EndpointSlice/kube-state-metrics-zkggx   -                      25m   [ControllerReference OwnerReference]
 
-$ kubectl lineage daemonset.apps svclb-traefik --show-group
-NAME                                                   READY   STATUS    AGE
-DaemonSet.apps/svclb-traefik                           1/1               30m
-├── ControllerRevision.apps/svclb-traefik-694565b64f   -                 30m
-└── Pod/svclb-traefik-rrpdf                            2/2     Running   30m
+$ kubectl clusterrole/system:metrics-server -o wide
+NAMESPACE     NAME                                                         READY   STATUS    AGE   RELATIONSHIPS
+              ClusterRole/system:metrics-server                            -                 30m   -
+              └── ClusterRoleBinding/system:metrics-server                 -                 30m   [ClusterRoleBindingRole]
+kube-system       └── ServiceAccount/metrics-server                        -                 30m   [ClusterRoleBindingSubject]
+kube-system           └── Secret/metrics-server-token-sz96w                -                 30m   [ServiceAccountSecret]
+kube-system               └── Pod/metrics-server-7b4f8b595-mxtfp           1/1     Running   30m   [PodVolume]
+kube-system                   └── Service/metrics-server                   -                 30m   [Service]
+kube-system                       └── EndpointSlice/metrics-server-lbhb9   -                 30m   [ControllerReference OwnerReference]
 ```
 
 List of supported relationships used for discovering dependent objects:
 
 - Kubernetes
-  - [Controller References](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/api-machinery/controller-ref.md) & [Owner References](https://kubernetes.io/docs/concepts/overview/working-with-objects/owners-dependents/)
   - [ClusterRole References](https://kubernetes.io/docs/reference/kubernetes-api/authorization-resources/cluster-role-v1/), [ClusterRoleBinding References](https://kubernetes.io/docs/reference/kubernetes-api/authorization-resources/cluster-role-binding-v1/) & [RoleBinding References](https://kubernetes.io/docs/reference/kubernetes-api/authorization-resources/role-binding-v1/)
+  - [Controller References](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/api-machinery/controller-ref.md) & [Owner References](https://kubernetes.io/docs/concepts/overview/working-with-objects/owners-dependents/)
   - [Event References](https://kubernetes.io/docs/reference/kubernetes-api/cluster-resources/event-v1/)
   - [Ingress References](https://kubernetes.io/docs/reference/kubernetes-api/service-resources/ingress-v1/) & [IngressClass Reference](https://kubernetes.io/docs/reference/kubernetes-api/service-resources/ingress-class-v1/)
   - [MutatingWebhookConfiguration References](https://kubernetes.io/docs/reference/kubernetes-api/extend-resources/mutating-webhook-configuration-v1/) & [ValidatingWebhookConfiguration References](https://kubernetes.io/docs/reference/kubernetes-api/extend-resources/validating-webhook-configuration-v1/)

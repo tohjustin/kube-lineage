@@ -36,7 +36,10 @@ var (
 		kubectl lineage deployments bar
 
 		# List all dependents of the cronjob named "bar" in namespace "foo"
-		kubectl lineage cronjobs.batch/bar -n foo`)
+		kubectl lineage cronjobs.batch/bar -n foo
+
+		# List all dependents of the node named "k3d-dev-server" & the corresponding relationship type(s)
+		kubectl lineage node/k3d-dev-server -o wide`)
 )
 
 // CmdOptions contains all the options for running the lineage command.
