@@ -1,0 +1,44 @@
+apiVersion: krew.googlecontainertools.github.com/v1alpha2
+kind: Plugin
+metadata:
+  name: lineage
+spec:
+  version: {{ .TagName }}
+  homepage: https://github.com/tohjustin/kube-lineage
+  shortDescription: Display all dependent resources
+  description: |
+    This plugin prints a table of dependents of the specified resource.
+  caveats: |
+    The tool only shows dependencies among the resources you have access to.
+    So for restricted users, the result may be incomplete.
+  platforms:
+  - selector:
+      matchLabels:
+        os: darwin
+        arch: amd64
+    {{addURIAndSha "https://github.com/tohjustin/kube-lineage/releases/download/{{ .TagName }}/kube-lineage_darwin_amd64.tar.gz" .TagName }}
+    bin: kube-lineage
+  - selector:
+      matchLabels:
+        os: darwin
+        arch: arm64
+    {{addURIAndSha "https://github.com/tohjustin/kube-lineage/releases/download/{{ .TagName }}/kube-lineage_darwin_arm64.tar.gz" .TagName }}
+    bin: kube-lineage
+  - selector:
+      matchLabels:
+        os: linux
+        arch: amd64
+    {{addURIAndSha "https://github.com/tohjustin/kube-lineage/releases/download/{{ .TagName }}/kube-lineage_linux_amd64.tar.gz" .TagName }}
+    bin: kube-lineage
+  - selector:
+      matchLabels:
+        os: linux
+        arch: arm64
+    {{addURIAndSha "https://github.com/tohjustin/kube-lineage/releases/download/{{ .TagName }}/kube-lineage_linux_arm64.tar.gz" .TagName }}
+    bin: kube-lineage
+  - selector:
+      matchLabels:
+        os: windows
+        arch: amd64
+    {{addURIAndSha "https://github.com/tohjustin/kube-lineage/releases/download/{{ .TagName }}/kube-lineage_windows_amd64.zip" .TagName }}
+    bin: kube-lineage.exe
