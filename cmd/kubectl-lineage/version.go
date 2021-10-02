@@ -1,4 +1,4 @@
-package lineage
+package main
 
 import (
 	"fmt"

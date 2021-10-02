@@ -1,4 +1,4 @@
-package lineage_test
+package main_test
 
 import (
 	"bytes"
@@ -9,24 +9,21 @@ import (
 
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 
+	lineage "github.com/tohjustin/kubectl-lineage/cmd/kubectl-lineage"
 	"github.com/tohjustin/kubectl-lineage/internal/version"
-	"github.com/tohjustin/kubectl-lineage/pkg/cmd/lineage"
 )
 
 func runCmd(args ...string) (string, error) {
-	b := bytes.NewBufferString("")
-	cmd := lineage.New(genericclioptions.IOStreams{
-		In:     os.Stdin,
-		Out:    os.Stdout,
-		ErrOut: os.Stderr,
-	})
-	cmd.SetOut(b)
+	buf := bytes.NewBufferString("")
+	streams := genericclioptions.IOStreams{In: os.Stdin, Out: os.Stdout, ErrOut: os.Stderr}
+	cmd := lineage.New(streams)
+	cmd.SetOut(buf)
 
 	cmd.SetArgs(args)
 	if err := cmd.Execute(); err != nil {
 		return "", err
 	}
-	out, err := io.ReadAll(b)
+	out, err := io.ReadAll(buf)
 	if err != nil {
 		return "", err
 	}
