@@ -28,7 +28,7 @@ monitoring-system   └── Pod/kube-state-metrics-6cb9b94fdf-bkz22          1
 monitoring-system       └── Service/kube-state-metrics                   -                      25m   [Service]
 monitoring-system           └── EndpointSlice/kube-state-metrics-zkggx   -                      25m   [ControllerReference OwnerReference]
 
-$ kubectl clusterrole/system:metrics-server -o wide
+$ kubectl lineage clusterrole/system:metrics-server -o wide
 NAMESPACE     NAME                                                         READY   STATUS    AGE   RELATIONSHIPS
               ClusterRole/system:metrics-server                            -                 30m   -
               └── ClusterRoleBinding/system:metrics-server                 -                 30m   [ClusterRoleBindingRole]
