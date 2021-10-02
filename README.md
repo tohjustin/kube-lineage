@@ -1,7 +1,7 @@
 # kubectl-lineage
 
 [![build](https://github.com/tohjustin/kubectl-lineage/actions/workflows/build.yaml/badge.svg)](https://github.com/tohjustin/kubectl-lineage/actions/workflows/build.yaml)
-[![release](https://aegisbadges.appspot.com/static?subject=release&status=v0.1.0&color=318FE0)](https://github.com/tohjustin/kubectl-lineage/releases)
+[![release](https://aegisbadges.appspot.com/static?subject=release&status=v0.2.0&color=318FE0)](https://github.com/tohjustin/kubectl-lineage/releases)
 [![kubernetes compatibility](https://aegisbadges.appspot.com/static?subject=k8s%20compatibility&status=v1.19%2B&color=318FE0)](https://endoflife.date/kubernetes)
 [![license](https://aegisbadges.appspot.com/static?subject=license&status=Apache-2.0&color=318FE0)](./LICENSE.md)
 
