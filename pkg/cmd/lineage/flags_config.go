@@ -22,7 +22,7 @@ func (f *ConfigFlags) AddFlags(flags *pflag.FlagSet) {
 	f.ConfigFlags.AddFlags(flags)
 }
 
-// NewConfigFlags returns flags associated with command configuration,s
+// NewConfigFlags returns flags associated with command configuration,
 // with default values set.
 func NewConfigFlags() *ConfigFlags {
 	return &ConfigFlags{
