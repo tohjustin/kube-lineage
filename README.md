@@ -127,6 +127,12 @@ List of supported relationships used for discovering dependent objects:
 
 ## Installation
 
+### Install via [krew](https://krew.sigs.k8s.io/)
+
+```shell
+kubectl krew install lineage
+```
+
 ### Install from Source
 
 ```shell
