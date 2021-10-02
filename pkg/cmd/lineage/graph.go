@@ -186,11 +186,12 @@ func (n *Node) GetNestedString(fields ...string) string {
 type NodeMap map[types.UID]*Node
 
 const (
-	// Kubernetes ClusterRoleBinding, RoleBinding relationships.
-	RelationshipClusterRoleBindingSubject Relationship = "ClusterRoleBindingSubject"
-	RelationshipClusterRoleBindingRole    Relationship = "ClusterRoleBindingRole"
-	RelationshipRoleBindingSubject        Relationship = "RoleBindingSubject"
-	RelationshipRoleBindingRole           Relationship = "RoleBindingRole"
+	// Kubernetes ClusterRole, ClusterRoleBinding, RoleBinding relationships.
+	RelationshipClusterRoleAggregationRule Relationship = "ClusterRoleAggregationRule"
+	RelationshipClusterRoleBindingSubject  Relationship = "ClusterRoleBindingSubject"
+	RelationshipClusterRoleBindingRole     Relationship = "ClusterRoleBindingRole"
+	RelationshipRoleBindingSubject         Relationship = "RoleBindingSubject"
+	RelationshipRoleBindingRole            Relationship = "RoleBindingRole"
 
 	// Kubernetes Event relationships.
 	RelationshipEventRegarding Relationship = "EventRegarding"
@@ -417,6 +418,13 @@ func resolveDependents(objects []unstructuredv1.Unstructured, rootUID types.UID)
 				klog.V(4).Infof("Failed to get relationships for ingressclass named \"%s\": %s", node.Name, err)
 				continue
 			}
+		// Populate dependents based on ClusterRole relationships
+		case node.Group == "rbac.authorization.k8s.io" && node.Kind == "ClusterRole":
+			rmap, err = getClusterRoleRelationships(node)
+			if err != nil {
+				klog.V(4).Infof("Failed to get relationships for clusterrole named \"%s\": %s", node.Name, err)
+				continue
+			}
 		// Populate dependents based on ClusterRoleBinding relationships
 		case node.Group == "rbac.authorization.k8s.io" && node.Kind == "ClusterRoleBinding":
 			rmap, err = getClusterRoleBindingRelationships(node)
@@ -473,6 +481,34 @@ func resolveDependents(objects []unstructuredv1.Unstructured, rootUID types.UID)
 
 	klog.V(4).Infof("Resolved %d dependents for root object (uid: %s)", len(nodeMap)-1, rootUID)
 	return nodeMap
+}
+
+// getClusterRoleRelationships returns a map of relationships that this
+// ClusterRole has with other objects, based on what was referenced in
+// its manifest.
+func getClusterRoleRelationships(n *Node) (*RelationshipMap, error) {
+	var cr rbacv1.ClusterRole
+	err := runtime.DefaultUnstructuredConverter.FromUnstructured(n.UnstructuredContent(), &cr)
+	if err != nil {
+		return nil, err
+	}
+
+	var ols ObjectLabelSelector
+	result := newRelationshipMap()
+
+	// RelationshipClusterRoleAggregationRule
+	if ar := cr.AggregationRule; ar != nil {
+		for ix := range ar.ClusterRoleSelectors {
+			selector, err := metav1.LabelSelectorAsSelector(&ar.ClusterRoleSelectors[ix])
+			if err != nil {
+				return nil, err
+			}
+			ols = ObjectLabelSelector{Group: "rbac.authorization.k8s.io", Kind: "ClusterRole", Selector: selector}
+			result.AddDependencyByLabelSelector(ols, RelationshipClusterRoleAggregationRule)
+		}
+	}
+
+	return &result, nil
 }
 
 // getClusterRoleBindingRelationships returns a map of relationships that this
