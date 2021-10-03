@@ -1,14 +1,14 @@
-# kubectl-lineage
+# kube-lineage
 
-[![build](https://github.com/tohjustin/kubectl-lineage/actions/workflows/build.yaml/badge.svg)](https://github.com/tohjustin/kubectl-lineage/actions/workflows/build.yaml)
-[![release](https://aegisbadges.appspot.com/static?subject=release&status=v0.2.0&color=318FE0)](https://github.com/tohjustin/kubectl-lineage/releases)
+[![build](https://github.com/tohjustin/kube-lineage/actions/workflows/build.yaml/badge.svg)](https://github.com/tohjustin/kube-lineage/actions/workflows/build.yaml)
+[![release](https://aegisbadges.appspot.com/static?subject=release&status=v0.2.0&color=318FE0)](https://github.com/tohjustin/kube-lineage/releases)
 [![kubernetes compatibility](https://aegisbadges.appspot.com/static?subject=k8s%20compatibility&status=v1.19%2B&color=318FE0)](https://endoflife.date/kubernetes)
 [![license](https://aegisbadges.appspot.com/static?subject=license&status=Apache-2.0&color=318FE0)](./LICENSE.md)
 
-A kubectl plugin to display all dependents of a Kubernetes object.
+A CLI tool to display all dependents of a Kubernetes object.
 
 ```shell
-$ kubectl lineage deploy/coredns
+$ kube-lineage deploy/coredns
 NAME                                           READY   STATUS    AGE
 Deployment/coredns                             1/1               30m
 └── ReplicaSet/coredns-5d69dc75db              1/1               30m
@@ -16,7 +16,7 @@ Deployment/coredns                             1/1               30m
         └── Service/kube-dns                   -                 30m
             └── EndpointSlice/kube-dns-pxh5w   -                 30m
 
-$ kubectl lineage node k3d-dev-server-1 -o wide
+$ kube-lineage node k3d-dev-server-1 -o wide
 NAMESPACE           NAME                                                 READY   STATUS         AGE   RELATIONSHIPS
                     Node/k3d-dev-server-1                                True    KubeletReady   30m   -
                     ├── CSINode/k3d-dev-server-1                         -                      30m   [OwnerReference]
@@ -28,7 +28,7 @@ monitoring-system   └── Pod/kube-state-metrics-6cb9b94fdf-bkz22          1
 monitoring-system       └── Service/kube-state-metrics                   -                      25m   [Service]
 monitoring-system           └── EndpointSlice/kube-state-metrics-zkggx   -                      25m   [ControllerReference OwnerReference]
 
-$ kubectl lineage clusterrole/system:metrics-server -o wide
+$ kube-lineage clusterrole/system:metrics-server -o wide
 NAMESPACE     NAME                                                         READY   STATUS    AGE   RELATIONSHIPS
               ClusterRole/system:metrics-server                            -                 30m   -
               └── ClusterRoleBinding/system:metrics-server                 -                 30m   [ClusterRoleBindingRole]
@@ -58,16 +58,17 @@ List of supported relationships used for discovering dependent objects:
 ### Install from Source
 
 ```shell
-git clone git@github.com:tohjustin/kubectl-lineage.git
+git clone git@github.com:tohjustin/kube-lineage.git
 make install
 
-kubectl-lineage --version
+kube-lineage --version
 ```
 
 ## Prior Art
 
-kubectl-lineage has been inspired by the following projects:
+kube-lineage has been inspired by the following projects:
 
 - [ahmetb/kubectl-tree](https://github.com/ahmetb/kubectl-tree)
+- [feloy/kubectl-service-tree](https://github.com/feloy/kubectl-service-tree)
 - [nimakaviani/knative-inspect](https://github.com/nimakaviani/knative-inspect/)
 - [steveteuber/kubectl-graph](https://github.com/steveteuber/kubectl-graph)

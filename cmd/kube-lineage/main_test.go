@@ -9,8 +9,8 @@ import (
 
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 
-	lineage "github.com/tohjustin/kubectl-lineage/cmd/kubectl-lineage"
-	"github.com/tohjustin/kubectl-lineage/internal/version"
+	lineage "github.com/tohjustin/kube-lineage/cmd/kube-lineage"
+	"github.com/tohjustin/kube-lineage/internal/version"
 )
 
 func runCmd(args ...string) (string, error) {

@@ -16,7 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/duration"
 	"k8s.io/client-go/util/jsonpath"
 
-	"github.com/tohjustin/kubectl-lineage/internal/graph"
+	"github.com/tohjustin/kube-lineage/internal/graph"
 )
 
 const (

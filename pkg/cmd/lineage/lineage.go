@@ -26,13 +26,13 @@ import (
 	cmdutil "k8s.io/kubectl/pkg/cmd/util"
 	"k8s.io/kubectl/pkg/util/templates"
 
-	"github.com/tohjustin/kubectl-lineage/internal/graph"
-	"github.com/tohjustin/kubectl-lineage/internal/log"
-	lineageprinters "github.com/tohjustin/kubectl-lineage/internal/printers"
+	"github.com/tohjustin/kube-lineage/internal/graph"
+	"github.com/tohjustin/kube-lineage/internal/log"
+	lineageprinters "github.com/tohjustin/kube-lineage/internal/printers"
 )
 
 var (
-	cmdName    = "kubectl-lineage"
+	cmdName    = "kube-lineage"
 	cmdUse     = "COMMAND (TYPE[.VERSION][.GROUP] [NAME] | TYPE[.VERSION][.GROUP]/NAME) [flags]"
 	cmdExample = templates.Examples(`
 		# List all dependents of the deployment named "bar" in the current namespace

@@ -44,11 +44,11 @@ test:
 
 .PHONY: build
 build:
-	go build $(GO_BUILD_ARGS) -o bin/kubectl-lineage ./cmd/kubectl-lineage
+	go build $(GO_BUILD_ARGS) -o bin/kube-lineage ./cmd/kube-lineage
 
 .PHONY: install
 install: build
-	install bin/kubectl-lineage $(shell go env GOPATH)/bin
+	install bin/kube-lineage $(shell go env GOPATH)/bin
 
 .PHONY: release
 RELEASE_ARGS?=release --rm-dist

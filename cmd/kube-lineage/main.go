@@ -8,7 +8,7 @@ import (
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/klog/v2"
 
-	"github.com/tohjustin/kubectl-lineage/pkg/cmd/lineage"
+	"github.com/tohjustin/kube-lineage/pkg/cmd/lineage"
 )
 
 func New(streams genericclioptions.IOStreams) *cobra.Command {
@@ -19,14 +19,14 @@ func New(streams genericclioptions.IOStreams) *cobra.Command {
 }
 
 func main() {
-	flags := pflag.NewFlagSet("kubectl-lineage", pflag.ExitOnError)
+	flags := pflag.NewFlagSet("kube-lineage", pflag.ExitOnError)
 	pflag.CommandLine = flags
 
 	streams := genericclioptions.IOStreams{In: os.Stdin, Out: os.Stdout, ErrOut: os.Stderr}
-	root := New(streams)
+	rootCmd := New(streams)
 
 	klog.V(4).Infof("Version: %s", getVersion())
-	if err := root.Execute(); err != nil {
+	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}
 }

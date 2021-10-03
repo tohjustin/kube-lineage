@@ -1,4 +1,4 @@
-module github.com/tohjustin/kubectl-lineage
+module github.com/tohjustin/kube-lineage
 
 go 1.16
 
