@@ -141,7 +141,7 @@ func NewCmd(streams genericclioptions.IOStreams, name, parentCmdPath string) *co
 		DisableSuggestions:    true,
 		SilenceUsage:          true,
 		Run: func(c *cobra.Command, args []string) {
-			klog.V(4).Infof("Version: %s", c.Version)
+			klog.V(4).Infof("Version: %s", c.Root().Version)
 			cmdutil.CheckErr(o.Complete(c, args))
 			cmdutil.CheckErr(o.Validate())
 			cmdutil.CheckErr(o.Run())
@@ -299,7 +299,7 @@ func (o *CmdOptions) Run() error {
 	}
 
 	// Include root object into objects to handle cases where user has access
-	// to get the root object but unable to list it resource type
+	// to get the root object but unable to list its resource type
 	objects = append(objects, *rootObject)
 
 	// Find all dependents of the root object
