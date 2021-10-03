@@ -293,9 +293,12 @@ func nodeToTableRow(node *graph.Node, rset graph.RelationshipSet, namePrefix str
 	var name, ready, status, age string
 	var relationships interface{}
 
-	if showGroupFn(node.Kind) && len(node.Group) > 0 {
+	switch {
+	case len(node.Kind) == 0:
+		name = node.Name
+	case len(node.Group) > 0 && showGroupFn(node.Kind):
 		name = fmt.Sprintf("%s%s.%s/%s", namePrefix, node.Kind, node.Group, node.Name)
-	} else {
+	default:
 		name = fmt.Sprintf("%s%s/%s", namePrefix, node.Kind, node.Name)
 	}
 	switch {
@@ -315,17 +318,18 @@ func nodeToTableRow(node *graph.Node, rset graph.RelationshipSet, namePrefix str
 		ready, status, _ = getStatefulSetReadyStatus(node.Unstructured)
 	case node.Group == "events.k8s.io" && node.Kind == "Event":
 		ready, status, _ = getEventReadyStatus(node.Unstructured)
-	default:
+	case node.Unstructured != nil:
 		ready, status, _ = getObjectReadyStatus(node.Unstructured)
 	}
 	if len(ready) == 0 {
 		ready = cellNotApplicable
 	}
-	age = translateTimestampSince(node.GetCreationTimestamp())
-	if r := rset.List(); len(r) > 0 {
-		relationships = r
-	} else {
-		relationships = cellNotApplicable
+	if node.Unstructured != nil {
+		age = translateTimestampSince(node.GetCreationTimestamp())
+	}
+	relationships = []string{}
+	if rset != nil {
+		relationships = rset.List()
 	}
 
 	return metav1.TableRow{
