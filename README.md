@@ -29,15 +29,15 @@ monitoring-system   └── Pod/kube-state-metrics-6cb9b94fdf-bkz22          1
 monitoring-system       └── Service/kube-state-metrics                   -                      25m   [Service]
 monitoring-system           └── EndpointSlice/kube-state-metrics-zkggx   -                      25m   [ControllerReference OwnerReference]
 
-$ kube-lineage clusterrole/system:metrics-server -o wide
-NAMESPACE     NAME                                                         READY   STATUS    AGE   RELATIONSHIPS
-              ClusterRole/system:metrics-server                            -                 30m   -
-              └── ClusterRoleBinding/system:metrics-server                 -                 30m   [ClusterRoleBindingRole]
-kube-system       └── ServiceAccount/metrics-server                        -                 30m   [ClusterRoleBindingSubject]
-kube-system           └── Secret/metrics-server-token-sz96w                -                 30m   [ServiceAccountSecret]
-kube-system               └── Pod/metrics-server-7b4f8b595-mxtfp           1/1     Running   30m   [PodVolume]
-kube-system                   └── Service/metrics-server                   -                 30m   [Service]
-kube-system                       └── EndpointSlice/metrics-server-lbhb9   -                 30m   [ControllerReference OwnerReference]
+$ kube-lineage clusterrole/system:metrics-server --show-group -o wide
+NAMESPACE     NAME                                                                          READY   STATUS    AGE   RELATIONSHIPS
+              ClusterRole.rbac.authorization.k8s.io/system:metrics-server                   -                 30m   -
+              └── ClusterRoleBinding.rbac.authorization.k8s.io/system:metrics-server        -                 30m   [ClusterRoleBindingRole]
+kube-system       └── ServiceAccount/metrics-server                                         -                 30m   [ClusterRoleBindingSubject]
+kube-system           └── Secret/metrics-server-token-sz96w                                 -                 30m   [ServiceAccountSecret]
+kube-system               └── Pod/metrics-server-7b4f8b595-mxtfp                            1/1     Running   30m   [PodVolume]
+kube-system                   └── Service/metrics-server                                    -                 30m   [Service]
+kube-system                       └── EndpointSlice.discovery.k8s.io/metrics-server-lbhb9   -                 30m   [ControllerReference OwnerReference]
 
 $ kube-lineage helm traefik --show-labels
 NAMESPACE     NAME                              READY   STATUS     AGE   LABELS
