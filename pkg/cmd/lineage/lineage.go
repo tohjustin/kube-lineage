@@ -25,6 +25,7 @@ import (
 	"k8s.io/kubectl/pkg/util/templates"
 
 	"github.com/tohjustin/kube-lineage/internal/graph"
+	"github.com/tohjustin/kube-lineage/internal/log"
 	lineageprinters "github.com/tohjustin/kube-lineage/internal/printers"
 )
 
@@ -149,6 +150,7 @@ func NewCmd(streams genericclioptions.IOStreams, name, parentCmdPath string) *co
 
 	o.ConfigFlags.AddFlags(cmd.Flags())
 	o.PrintFlags.AddFlags(cmd.Flags())
+	log.AddFlags(cmd.Flags())
 
 	return cmd
 }
