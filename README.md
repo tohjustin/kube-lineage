@@ -3,6 +3,7 @@
 [![build](https://github.com/tohjustin/kube-lineage/actions/workflows/build.yaml/badge.svg)](https://github.com/tohjustin/kube-lineage/actions/workflows/build.yaml)
 [![release](https://aegisbadges.appspot.com/static?subject=release&status=v0.2.0&color=318FE0)](https://github.com/tohjustin/kube-lineage/releases)
 [![kubernetes compatibility](https://aegisbadges.appspot.com/static?subject=k8s%20compatibility&status=v1.19%2B&color=318FE0)](https://endoflife.date/kubernetes)
+[![helm compatibility](https://aegisbadges.appspot.com/static?subject=helm%20compatibility&status=v3&color=318FE0)](https://endoflife.date/kubernetes)
 [![license](https://aegisbadges.appspot.com/static?subject=license&status=Apache-2.0&color=318FE0)](./LICENSE.md)
 
 A CLI tool to display all dependents of a Kubernetes object.
@@ -37,6 +38,19 @@ kube-system           └── Secret/metrics-server-token-sz96w               
 kube-system               └── Pod/metrics-server-7b4f8b595-mxtfp           1/1     Running   30m   [PodVolume]
 kube-system                   └── Service/metrics-server                   -                 30m   [Service]
 kube-system                       └── EndpointSlice/metrics-server-lbhb9   -                 30m   [ControllerReference OwnerReference]
+
+$ kube-lineage helm traefik --show-labels
+NAMESPACE     NAME                              READY   STATUS   AGE   LABELS
+kube-system   traefik                           -                21d   <none>
+              ├── ClusterRole/traefik           -                21d   app.kubernetes.io/managed-by=Helm
+              ├── ClusterRoleBinding/traefik    -                21d   app.kubernetes.io/managed-by=Helm
+kube-system   ├── ConfigMap/traefik             -                21d   app.kubernetes.io/managed-by=Helm,app=traefik,chart=traefik-1.81.0,heritage=Helm,release=traefik
+kube-system   ├── ConfigMap/traefik-test        -                21d   app.kubernetes.io/managed-by=Helm,app=traefik,chart=traefik-1.81.0,heritage=Helm,release=traefik
+kube-system   ├── Deployment/traefik            1/1              21d   app.kubernetes.io/managed-by=Helm,app=traefik,chart=traefik-1.81.0,heritage=Helm,release=traefik
+kube-system   ├── Secret/traefik-default-cert   -                21d   app.kubernetes.io/managed-by=Helm,app=traefik,chart=traefik-1.81.0,heritage=Helm,release=traefik
+kube-system   ├── Service/traefik               -                21d   app.kubernetes.io/managed-by=Helm,app=traefik,chart=traefik-1.81.0,heritage=Helm,release=traefik
+kube-system   ├── Service/traefik-prometheus    -                21d   app.kubernetes.io/managed-by=Helm,app=traefik,chart=traefik-1.81.0,heritage=Helm,release=traefik
+kube-system   └── ServiceAccount/traefik        -                21d   app.kubernetes.io/managed-by=Helm
 ```
 
 List of supported relationships used for discovering dependent objects:
@@ -51,7 +65,8 @@ List of supported relationships used for discovering dependent objects:
   - [Pod References](https://kubernetes.io/docs/reference/kubernetes-api/workload-resources/pod-v1/)
   - [Service References](https://kubernetes.io/docs/reference/kubernetes-api/service-resources/service-v1/)
   - [ServiceAccount References](https://kubernetes.io/docs/reference/kubernetes-api/authentication-resources/service-account-v1/)
-- Helm (Coming Soon)
+- Helm
+  - [Release References](https://helm.sh/docs/intro/using_helm/#three-big-concepts)
 
 ## Installation
 

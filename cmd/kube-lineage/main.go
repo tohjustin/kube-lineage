@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/pflag"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 
+	"github.com/tohjustin/kube-lineage/pkg/cmd/helm"
 	"github.com/tohjustin/kube-lineage/pkg/cmd/lineage"
 )
 
@@ -24,6 +25,7 @@ func init() {
 
 func NewCmd(streams genericclioptions.IOStreams) *cobra.Command {
 	cmd := lineage.NewCmd(streams, rootCmdName, "")
+	cmd.AddCommand(helm.NewCmd(streams, "", rootCmdName))
 	addLogFlags(cmd)
 	addVersionFlags(cmd)
 	return cmd
