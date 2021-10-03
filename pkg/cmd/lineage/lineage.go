@@ -27,7 +27,6 @@ import (
 	"k8s.io/kubectl/pkg/util/templates"
 
 	"github.com/tohjustin/kube-lineage/internal/graph"
-	"github.com/tohjustin/kube-lineage/internal/log"
 	lineageprinters "github.com/tohjustin/kube-lineage/internal/printers"
 )
 
@@ -143,6 +142,7 @@ func New(streams genericclioptions.IOStreams) *cobra.Command {
 		DisableSuggestions:    true,
 		SilenceUsage:          true,
 		Run: func(c *cobra.Command, args []string) {
+			klog.V(4).Infof("Version: %s", c.Version)
 			cmdutil.CheckErr(o.Complete(c, args))
 			cmdutil.CheckErr(o.Validate())
 			cmdutil.CheckErr(o.Run())
@@ -151,7 +151,6 @@ func New(streams genericclioptions.IOStreams) *cobra.Command {
 
 	o.ConfigFlags.AddFlags(cmd.Flags())
 	o.PrintFlags.AddFlags(cmd.Flags())
-	log.AddFlags(cmd.Flags())
 
 	return cmd
 }
