@@ -9,14 +9,14 @@ import (
 
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 
-	lineage "github.com/tohjustin/kube-lineage/cmd/kube-lineage"
+	kubelineage "github.com/tohjustin/kube-lineage/cmd/kube-lineage"
 	"github.com/tohjustin/kube-lineage/internal/version"
 )
 
 func runCmd(args ...string) (string, error) {
 	buf := bytes.NewBufferString("")
 	streams := genericclioptions.IOStreams{In: os.Stdin, Out: os.Stdout, ErrOut: os.Stderr}
-	cmd := lineage.New(streams)
+	cmd := kubelineage.NewCmd(streams)
 	cmd.SetOut(buf)
 
 	cmd.SetArgs(args)

@@ -3,8 +3,6 @@ package lineage
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 
@@ -31,17 +29,18 @@ import (
 )
 
 var (
-	cmdName    = "kube-lineage"
-	cmdUse     = "COMMAND (TYPE[.VERSION][.GROUP] [NAME] | TYPE[.VERSION][.GROUP]/NAME) [flags]"
+	cmdPath    string
+	cmdName    = "lineage"
+	cmdUse     = "%CMD% (TYPE[.VERSION][.GROUP] [NAME] | TYPE[.VERSION][.GROUP]/NAME) [flags]"
 	cmdExample = templates.Examples(`
 		# List all dependents of the deployment named "bar" in the current namespace
-		COMMAND deployments bar
+		%CMD_PATH% deployments bar
 
 		# List all dependents of the cronjob named "bar" in namespace "foo"
-		COMMAND cronjobs.batch/bar -n foo
+		%CMD_PATH% cronjobs.batch/bar -n foo
 
 		# List all dependents of the node named "k3d-dev-server" & the corresponding relationship type(s)
-		COMMAND node/k3d-dev-server -o wide`)
+		%CMD_PATH% node/k3d-dev-server -o wide`)
 	cmdShort = "Display all dependents of a Kubernetes object"
 	cmdLong  = templates.LongDesc(`
 		Display all dependents of a Kubernetes object.
@@ -49,14 +48,6 @@ var (
 		TYPE is a Kubernetes resource. Shortcuts and groups will be resolved.
 		NAME is the name of a particular Kubernetes resource.`)
 )
-
-//nolint:gochecknoinits
-func init() {
-	// If executed as a kubectl plugin
-	if strings.HasPrefix(filepath.Base(os.Args[0]), "kubectl-") {
-		cmdName = "kubectl lineage"
-	}
-}
 
 // CmdOptions contains all the options for running the lineage command.
 type CmdOptions struct {
@@ -124,17 +115,24 @@ func (r Resource) GroupVersionResource() schema.GroupVersionResource {
 	}
 }
 
-// New returns an initialized Command for the lineage command.
-func New(streams genericclioptions.IOStreams) *cobra.Command {
+// NewCmd returns an initialized Command for the lineage command.
+func NewCmd(streams genericclioptions.IOStreams, name, parentCmdPath string) *cobra.Command {
 	o := &CmdOptions{
 		ConfigFlags: NewConfigFlags(),
 		PrintFlags:  lineageprinters.NewFlags(),
 		IOStreams:   streams,
 	}
 
+	if len(name) > 0 {
+		cmdName = name
+	}
+	cmdPath = cmdName
+	if len(parentCmdPath) > 0 {
+		cmdPath = parentCmdPath + " " + cmdName
+	}
 	cmd := &cobra.Command{
-		Use:                   strings.ReplaceAll(cmdUse, "COMMAND", cmdName),
-		Example:               strings.ReplaceAll(cmdExample, "COMMAND", cmdName),
+		Use:                   strings.ReplaceAll(cmdUse, "%CMD%", cmdName),
+		Example:               strings.ReplaceAll(cmdExample, "%CMD_PATH%", cmdName),
 		Short:                 cmdShort,
 		Long:                  cmdLong,
 		Args:                  cobra.MaximumNArgs(2),
@@ -163,7 +161,7 @@ func (o *CmdOptions) Complete(cmd *cobra.Command, args []string) error {
 	case 1:
 		resourceTokens := strings.SplitN(args[0], "/", 2)
 		if len(resourceTokens) != 2 {
-			return fmt.Errorf("arguments in <resource>/<name> form must have a single resource and name\nSee '%s -h' for help and examples", cmdName)
+			return fmt.Errorf("arguments in <resource>/<name> form must have a single resource and name\nSee '%s -h' for help and examples", cmdPath)
 		}
 		resourceType = resourceTokens[0]
 		resourceName = resourceTokens[1]
@@ -171,7 +169,7 @@ func (o *CmdOptions) Complete(cmd *cobra.Command, args []string) error {
 		resourceType = args[0]
 		resourceName = args[1]
 	default:
-		return fmt.Errorf("resource must be specified as <resource> <name> or <resource>/<name>\nSee '%s -h' for help and examples", cmdName)
+		return fmt.Errorf("resource must be specified as <resource> <name> or <resource>/<name>\nSee '%s -h' for help and examples", cmdPath)
 	}
 	restMapper, err := o.ConfigFlags.ToRESTMapper()
 	if err != nil {
