@@ -168,21 +168,21 @@ func (o *CmdOptions) Run() error {
 
 	// Fetch the release to ensure it exists before proceeding
 	client := action.NewGet(o.ActionConfig)
-	release, err := client.Run(o.RequestRelease)
+	r, err := client.Run(o.RequestRelease)
 	if err != nil {
 		return err
 	}
-	klog.V(4).Infof("Release manifest:\n%s\n", release.Manifest)
+	klog.V(4).Infof("Release manifest:\n%s\n", r.Manifest)
 
 	// Fetch all resources in the manifests from the cluster
-	objects, err := o.getManifestObjects(release)
+	objects, err := o.getManifestObjects(r)
 	if err != nil {
 		return err
 	}
 	klog.V(4).Infof("Got %d objects from release manifest", len(objects))
 
 	// Construct relationship tree to print out
-	rootNode := releaseToNode(release)
+	rootNode := releaseToNode(r)
 	rootUID := rootNode.GetUID()
 	nodeMap := graph.NodeMap{rootUID: rootNode}
 	for ix, o := range objects {
@@ -272,17 +272,59 @@ func (o *CmdOptions) printObj(nodeMap graph.NodeMap, rootUID types.UID) error {
 	return printer.PrintObj(table, o.Out)
 }
 
+// getReleaseReadyStatus returns the ready & status value of a Helm release
+// object.
+func getReleaseReadyStatus(r *release.Release) (string, string) {
+	switch r.Info.Status {
+	case release.StatusDeployed:
+		return "True", "Deployed"
+	case release.StatusFailed:
+		return "False", "Failed"
+	case release.StatusPendingInstall:
+		return "False", "PendingInstall"
+	case release.StatusPendingRollback:
+		return "False", "PendingRollback"
+	case release.StatusPendingUpgrade:
+		return "False", "PendingUpgrade"
+	case release.StatusSuperseded:
+		return "False", "Superseded"
+	case release.StatusUninstalled:
+		return "False", "Uninstalled"
+	case release.StatusUninstalling:
+		return "False", "Uninstalling"
+	case release.StatusUnknown:
+		fallthrough
+	default:
+		return "False", "Unknown"
+	}
+}
+
 // releaseToNode converts a Helm release object into a Node in the relationship
 // tree.
-func releaseToNode(release *release.Release) *graph.Node {
-	rootUID := types.UID("")
-	root := unstructuredv1.Unstructured{Object: map[string]interface{}{}}
-	root.SetName(release.Name)
-	root.SetNamespace(release.Namespace)
-	root.SetCreationTimestamp(metav1.Time{Time: release.Info.FirstDeployed.Time})
-	root.SetUID(rootUID)
+func releaseToNode(r *release.Release) *graph.Node {
+	root := new(unstructuredv1.Unstructured)
+	ready, status := getReleaseReadyStatus(r)
+	// Set "Ready" condition values based on the printer.objectReadyReasonJSONPath
+	// & printer.objectReadyStatusJSONPath paths
+	root.SetUnstructuredContent(
+		map[string]interface{}{
+			"status": map[string]interface{}{
+				"conditions": []interface{}{
+					map[string]interface{}{
+						"type":   "Ready",
+						"status": ready,
+						"reason": status,
+					},
+				},
+			},
+		},
+	)
+	root.SetName(r.Name)
+	root.SetNamespace(r.Namespace)
+	root.SetCreationTimestamp(metav1.Time{Time: r.Info.FirstDeployed.Time})
+	root.SetUID(types.UID(""))
 	return &graph.Node{
-		Unstructured: &root,
+		Unstructured: root,
 		UID:          root.GetUID(),
 		Name:         root.GetName(),
 		Namespace:    root.GetNamespace(),

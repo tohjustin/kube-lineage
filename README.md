@@ -40,17 +40,17 @@ kube-system                   └── Service/metrics-server                  
 kube-system                       └── EndpointSlice/metrics-server-lbhb9   -                 30m   [ControllerReference OwnerReference]
 
 $ kube-lineage helm traefik --show-labels
-NAMESPACE     NAME                              READY   STATUS   AGE   LABELS
-kube-system   traefik                           -                21d   <none>
-              ├── ClusterRole/traefik           -                21d   app.kubernetes.io/managed-by=Helm
-              ├── ClusterRoleBinding/traefik    -                21d   app.kubernetes.io/managed-by=Helm
-kube-system   ├── ConfigMap/traefik             -                21d   app.kubernetes.io/managed-by=Helm,app=traefik,chart=traefik-1.81.0,heritage=Helm,release=traefik
-kube-system   ├── ConfigMap/traefik-test        -                21d   app.kubernetes.io/managed-by=Helm,app=traefik,chart=traefik-1.81.0,heritage=Helm,release=traefik
-kube-system   ├── Deployment/traefik            1/1              21d   app.kubernetes.io/managed-by=Helm,app=traefik,chart=traefik-1.81.0,heritage=Helm,release=traefik
-kube-system   ├── Secret/traefik-default-cert   -                21d   app.kubernetes.io/managed-by=Helm,app=traefik,chart=traefik-1.81.0,heritage=Helm,release=traefik
-kube-system   ├── Service/traefik               -                21d   app.kubernetes.io/managed-by=Helm,app=traefik,chart=traefik-1.81.0,heritage=Helm,release=traefik
-kube-system   ├── Service/traefik-prometheus    -                21d   app.kubernetes.io/managed-by=Helm,app=traefik,chart=traefik-1.81.0,heritage=Helm,release=traefik
-kube-system   └── ServiceAccount/traefik        -                21d   app.kubernetes.io/managed-by=Helm
+NAMESPACE     NAME                              READY   STATUS     AGE   LABELS
+kube-system   traefik                           True    Deployed   30m   <none>
+              ├── ClusterRole/traefik           -                  30m   app.kubernetes.io/managed-by=Helm
+              ├── ClusterRoleBinding/traefik    -                  30m   app.kubernetes.io/managed-by=Helm
+kube-system   ├── ConfigMap/traefik             -                  30m   app.kubernetes.io/managed-by=Helm,app=traefik,chart=traefik-1.81.0,heritage=Helm,release=traefik
+kube-system   ├── ConfigMap/traefik-test        -                  30m   app.kubernetes.io/managed-by=Helm,app=traefik,chart=traefik-1.81.0,heritage=Helm,release=traefik
+kube-system   ├── Deployment/traefik            1/1                30m   app.kubernetes.io/managed-by=Helm,app=traefik,chart=traefik-1.81.0,heritage=Helm,release=traefik
+kube-system   ├── Secret/traefik-default-cert   -                  30m   app.kubernetes.io/managed-by=Helm,app=traefik,chart=traefik-1.81.0,heritage=Helm,release=traefik
+kube-system   ├── Service/traefik               -                  30m   app.kubernetes.io/managed-by=Helm,app=traefik,chart=traefik-1.81.0,heritage=Helm,release=traefik
+kube-system   ├── Service/traefik-prometheus    -                  30m   app.kubernetes.io/managed-by=Helm,app=traefik,chart=traefik-1.81.0,heritage=Helm,release=traefik
+kube-system   └── ServiceAccount/traefik        -                  30m   app.kubernetes.io/managed-by=Helm
 ```
 
 List of supported relationships used for discovering dependent objects:
