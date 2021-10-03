@@ -53,6 +53,7 @@ var (
 
 //nolint:gochecknoinits
 func init() {
+	// If executed as a kubectl plugin
 	if strings.HasPrefix(filepath.Base(os.Args[0]), "kubectl-") {
 		cmdName = "kubectl lineage"
 	}
@@ -137,6 +138,7 @@ func New(streams genericclioptions.IOStreams) *cobra.Command {
 		Example:               strings.ReplaceAll(cmdExample, "COMMAND", cmdName),
 		Short:                 cmdShort,
 		Long:                  cmdLong,
+		Args:                  cobra.MaximumNArgs(2),
 		DisableFlagsInUseLine: true,
 		DisableSuggestions:    true,
 		SilenceUsage:          true,
@@ -162,7 +164,7 @@ func (o *CmdOptions) Complete(cmd *cobra.Command, args []string) error {
 	case 1:
 		resourceTokens := strings.SplitN(args[0], "/", 2)
 		if len(resourceTokens) != 2 {
-			return fmt.Errorf("you must specify one or two arguments: resource or resource & resourceName")
+			return fmt.Errorf("arguments in <resource>/<name> form must have a single resource and name\nSee '%s -h' for help and examples", cmdName)
 		}
 		resourceType = resourceTokens[0]
 		resourceName = resourceTokens[1]
@@ -170,7 +172,7 @@ func (o *CmdOptions) Complete(cmd *cobra.Command, args []string) error {
 		resourceType = args[0]
 		resourceName = args[1]
 	default:
-		return fmt.Errorf("you must specify one or two arguments: resource or resource & resourceName")
+		return fmt.Errorf("resource must be specified as <resource> <name> or <resource>/<name>\nSee '%s -h' for help and examples", cmdName)
 	}
 	restMapper, err := o.ConfigFlags.ToRESTMapper()
 	if err != nil {
