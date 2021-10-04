@@ -1,6 +1,7 @@
 package helm
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -8,13 +9,17 @@ import (
 	"github.com/spf13/cobra"
 	"helm.sh/helm/v3/pkg/action"
 	"helm.sh/helm/v3/pkg/release"
+	"helm.sh/helm/v3/pkg/storage"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	unstructuredv1 "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/cli-runtime/pkg/printers"
 	"k8s.io/cli-runtime/pkg/resource"
+	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
 	cmdutil "k8s.io/kubectl/pkg/cmd/util"
 	"k8s.io/kubectl/pkg/util/templates"
@@ -44,14 +49,22 @@ var (
 		RELEASE_NAME is the name of a particular Helm release.`)
 )
 
+var (
+	configmapsResource = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "configmaps"}
+	secretsResource    = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "secrets"}
+)
+
 // CmdOptions contains all the options for running the helm command.
 type CmdOptions struct {
 	// RequestRelease represents the requested release
 	RequestRelease string
 
-	ConfigFlags  *ConfigFlags
-	ActionConfig *action.Configuration
-	Namespace    string
+	HelmDriver    string
+	ConfigFlags   *ConfigFlags
+	ActionConfig  *action.Configuration
+	ClientConfig  *rest.Config
+	DynamicClient dynamic.Interface
+	Namespace     string
 
 	PrintFlags *lineageprinters.PrintFlags
 	ToPrinter  func(withGroup bool, withNamespace bool) (printers.ResourcePrinterFunc, error)
@@ -110,12 +123,24 @@ func (o *CmdOptions) Complete(cmd *cobra.Command, args []string) error {
 	}
 	o.RequestRelease = releaseName
 
+	o.HelmDriver = os.Getenv("HELM_DRIVER")
 	o.Namespace, _, err = o.ConfigFlags.ToRawKubeConfigLoader().Namespace()
 	if err != nil {
 		return err
 	}
 	o.ActionConfig = new(action.Configuration)
-	err = o.ActionConfig.Init(o.ConfigFlags, o.Namespace, os.Getenv("HELM_DRIVER"), klog.V(4).Infof)
+	err = o.ActionConfig.Init(o.ConfigFlags, o.Namespace, o.HelmDriver, klog.V(4).Infof)
+	if err != nil {
+		return err
+	}
+	o.ClientConfig, err = o.ConfigFlags.ToRESTConfig()
+	if err != nil {
+		return err
+	}
+	o.ClientConfig.QPS = 1000
+	o.ClientConfig.Burst = 1000
+	o.ClientConfig.WarningHandler = rest.NoWarnings{}
+	o.DynamicClient, err = dynamic.NewForConfig(o.ClientConfig)
 	if err != nil {
 		return err
 	}
@@ -163,8 +188,10 @@ func (o *CmdOptions) Validate() error {
 }
 
 // Run implements all the necessary functionality for command.
+//nolint:funlen
 func (o *CmdOptions) Run() error {
 	var err error
+	ctx := context.Background()
 
 	// Fetch the release to ensure it exists before proceeding
 	client := action.NewGet(o.ActionConfig)
@@ -204,6 +231,30 @@ func (o *CmdOptions) Run() error {
 		}
 	}
 
+	// Fetch the storage object
+	stgObj, err := o.getStorageObject(ctx, r)
+	if err != nil {
+		return err
+	}
+	if stgObj != nil {
+		gvk := stgObj.GroupVersionKind()
+		node := graph.Node{
+			Unstructured:    stgObj,
+			UID:             stgObj.GetUID(),
+			Name:            stgObj.GetName(),
+			Namespace:       stgObj.GetNamespace(),
+			Group:           gvk.Group,
+			Kind:            gvk.Kind,
+			OwnerReferences: stgObj.GetOwnerReferences(),
+			Dependents:      map[types.UID]graph.RelationshipSet{},
+		}
+		uid := node.UID
+		nodeMap[uid] = &node
+		rootNode.Dependents[uid] = graph.RelationshipSet{
+			graph.RelationshipHelmStorage: {},
+		}
+	}
+
 	// Print output
 	return o.printObj(nodeMap, rootUID)
 }
@@ -237,6 +288,24 @@ func (o *CmdOptions) getManifestObjects(release *release.Release) ([]unstructure
 	}
 
 	return objects, nil
+}
+
+// getStorageObject fetches the underlying object that stores the information of
+// the provided Helm release.
+func (o *CmdOptions) getStorageObject(ctx context.Context, r *release.Release) (*unstructuredv1.Unstructured, error) {
+	var gvr schema.GroupVersionResource
+	switch o.HelmDriver {
+	case "secret", "":
+		gvr = secretsResource
+	case "configmap":
+		gvr = configmapsResource
+	case "memory", "sql":
+		return nil, nil
+	default:
+		panic("Unknown driver in HELM_DRIVER: " + o.HelmDriver)
+	}
+	ri := o.DynamicClient.Resource(gvr).Namespace(o.Namespace)
+	return ri.Get(ctx, makeKey(r.Name, r.Version), metav1.GetOptions{})
 }
 
 // printObj prints the root object & its dependents in table format.
@@ -331,4 +400,18 @@ func releaseToNode(r *release.Release) *graph.Node {
 		Namespace:    root.GetNamespace(),
 		Dependents:   map[types.UID]graph.RelationshipSet{},
 	}
+}
+
+// makeKey concatenates the Kubernetes storage object type, a release name and version
+// into a string with format:```<helm_storage_type>.<release_name>.v<release_version>```.
+// The storage type is prepended to keep name uniqueness between different
+// release storage types. An example of clash when not using the type:
+// https://github.com/helm/helm/issues/6435.
+// This key is used to uniquely identify storage objects.
+//
+// NOTE: Unfortunately the makeKey function isn't exported by the
+// helm.sh/helm/v3/pkg/storage package so we will have to copy-paste it here.
+// ref: https://github.com/helm/helm/blob/v3.7.0/pkg/storage/storage.go#L245-L253
+func makeKey(rlsname string, version int) string {
+	return fmt.Sprintf("%s.%s.v%d", storage.HelmStorageType, rlsname, version)
 }

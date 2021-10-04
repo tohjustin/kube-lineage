@@ -66,7 +66,7 @@ List of supported relationships used for discovering dependent objects:
   - [Service References](https://kubernetes.io/docs/reference/kubernetes-api/service-resources/service-v1/)
   - [ServiceAccount References](https://kubernetes.io/docs/reference/kubernetes-api/authentication-resources/service-account-v1/)
 - Helm
-  - [Release References](https://helm.sh/docs/intro/using_helm/#three-big-concepts)
+  - [Release References](https://helm.sh/docs/intro/using_helm/#three-big-concepts) & [Storage References](https://helm.sh/docs/topics/advanced/#storage-backends)
 
 ## Installation
 
