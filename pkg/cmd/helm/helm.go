@@ -185,16 +185,16 @@ func (o *CmdOptions) Run() error {
 	rootNode := releaseToNode(r)
 	rootUID := rootNode.GetUID()
 	nodeMap := graph.NodeMap{rootUID: rootNode}
-	for ix, o := range objects {
-		gvk := o.GroupVersionKind()
+	for ix, obj := range objects {
+		gvk := obj.GroupVersionKind()
 		node := graph.Node{
 			Unstructured:    &objects[ix],
-			UID:             o.GetUID(),
-			Name:            o.GetName(),
-			Namespace:       o.GetNamespace(),
+			UID:             obj.GetUID(),
+			Name:            obj.GetName(),
+			Namespace:       obj.GetNamespace(),
 			Group:           gvk.Group,
 			Kind:            gvk.Kind,
-			OwnerReferences: o.GetOwnerReferences(),
+			OwnerReferences: obj.GetOwnerReferences(),
 			Dependents:      map[types.UID]graph.RelationshipSet{},
 		}
 		uid := node.UID
@@ -208,7 +208,8 @@ func (o *CmdOptions) Run() error {
 	return o.printObj(nodeMap, rootUID)
 }
 
-// getManifestObjects fetches all objects found in the Helm release's manifest.
+// getManifestObjects fetches all objects found in the manifest of the provided
+// Helm release.
 func (o *CmdOptions) getManifestObjects(release *release.Release) ([]unstructuredv1.Unstructured, error) {
 	var objects []unstructuredv1.Unstructured
 	name, ns := release.Name, release.Namespace
