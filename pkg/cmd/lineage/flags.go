@@ -2,7 +2,6 @@ package lineage
 
 import (
 	"github.com/spf13/pflag"
-	"k8s.io/cli-runtime/pkg/genericclioptions"
 )
 
 const (
@@ -10,23 +9,20 @@ const (
 	flagAllNamespacesShorthand = "A"
 )
 
-// ConfigFlags composes common configuration flag structs used in the command.
-type ConfigFlags struct {
-	*genericclioptions.ConfigFlags
+// Flags composes common configuration flag structs used in the command.
+type Flags struct {
 	AllNamespaces *bool
 }
 
-// Copy returns a copy of ConfigFlags for mutation.
-func (f *ConfigFlags) Copy() ConfigFlags {
-	ConfigFlags := *f
-	return ConfigFlags
+// Copy returns a copy of Flags for mutation.
+func (f *Flags) Copy() Flags {
+	Flags := *f
+	return Flags
 }
 
 // AddFlags receives a *cobra.Command reference and binds flags related to
 // configuration to it.
-func (f *ConfigFlags) AddFlags(flags *pflag.FlagSet) {
-	f.ConfigFlags.AddFlags(flags)
-
+func (f *Flags) AddFlags(flags *pflag.FlagSet) {
 	if f.AllNamespaces != nil {
 		flags.BoolVarP(f.AllNamespaces, flagAllNamespaces, flagAllNamespacesShorthand, *f.AllNamespaces, "If present, list object relationships across all namespaces.")
 	}
@@ -34,11 +30,10 @@ func (f *ConfigFlags) AddFlags(flags *pflag.FlagSet) {
 
 // NewConfigFlags returns flags associated with command configuration,
 // with default values set.
-func NewConfigFlags() *ConfigFlags {
+func NewFlags() *Flags {
 	allNamespaces := false
 
-	return &ConfigFlags{
-		ConfigFlags:   genericclioptions.NewConfigFlags(true),
+	return &Flags{
 		AllNamespaces: &allNamespaces,
 	}
 }
