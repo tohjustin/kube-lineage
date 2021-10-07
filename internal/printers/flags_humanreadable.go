@@ -7,11 +7,11 @@ import (
 )
 
 const (
-	flagColumnLabel          = "label-columns"
-	flagColumnLabelShorthand = "L"
-	flagNoHeaders            = "no-headers"
-	flagShowLabels           = "show-labels"
-	flagShowGroup            = "show-group"
+	flagColumnLabels          = "label-columns"
+	flagColumnLabelsShorthand = "L"
+	flagNoHeaders             = "no-headers"
+	flagShowLabels            = "show-labels"
+	flagShowGroup             = "show-group"
 )
 
 // HumanPrintFlags provides default flags necessary for printing. Given the
@@ -75,7 +75,7 @@ func (f *HumanPrintFlags) ToPrinter(outputFormat string) (printers.ResourcePrint
 // human-readable printing to it.
 func (f *HumanPrintFlags) AddFlags(flags *pflag.FlagSet) {
 	if f.ColumnLabels != nil {
-		flags.StringSliceVarP(f.ColumnLabels, flagColumnLabel, flagColumnLabelShorthand, *f.ColumnLabels, "Accepts a comma separated list of labels that are going to be presented as columns. Names are case-sensitive. You can also use multiple flag options like -L label1 -L label2...")
+		flags.StringSliceVarP(f.ColumnLabels, flagColumnLabels, flagColumnLabelsShorthand, *f.ColumnLabels, "Accepts a comma separated list of labels that are going to be presented as columns. Names are case-sensitive. You can also use multiple flag options like -L label1 -L label2...")
 	}
 	if f.NoHeaders != nil {
 		flags.BoolVar(f.NoHeaders, flagNoHeaders, *f.NoHeaders, "When using the default output format, don't print headers (default print headers).")

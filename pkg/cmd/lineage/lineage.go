@@ -63,7 +63,7 @@ type CmdOptions struct {
 	DiscoveryClient discovery.DiscoveryInterface
 	Namespace       string
 
-	PrintFlags *lineageprinters.PrintFlags
+	PrintFlags *lineageprinters.Flags
 	ToPrinter  func(withGroup bool, withNamespace bool) (printers.ResourcePrinterFunc, error)
 
 	genericclioptions.IOStreams

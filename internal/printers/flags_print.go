@@ -13,40 +13,40 @@ const (
 	flagOutputFormat = "output"
 )
 
-// PrintFlags composes common printer flag structs used in the command.
-type PrintFlags struct {
+// Flags composes common printer flag structs used in the command.
+type Flags struct {
 	HumanReadableFlags *HumanPrintFlags
 	OutputFormat       *string
 }
 
 // AllowedFormats is the list of formats in which data can be displayed.
-func (f *PrintFlags) AllowedFormats() []string {
+func (f *Flags) AllowedFormats() []string {
 	formats := []string{}
 	formats = append(formats, f.HumanReadableFlags.AllowedFormats()...)
 	return formats
 }
 
-// Copy returns a copy of PrintFlags for mutation.
-func (f *PrintFlags) Copy() PrintFlags {
+// Copy returns a copy of Flags for mutation.
+func (f *Flags) Copy() Flags {
 	printFlags := *f
 	return printFlags
 }
 
 // EnsureWithGroup ensures that human-readable flags return a printer capable of
 // including resource kinds.
-func (f *PrintFlags) EnsureWithGroup() error {
+func (f *Flags) EnsureWithGroup() error {
 	return f.HumanReadableFlags.EnsureWithGroup()
 }
 
 // EnsureWithNamespace ensures that human-readable flags return a printer capable
 // of printing with a "namespace" column.
-func (f *PrintFlags) EnsureWithNamespace() error {
+func (f *Flags) EnsureWithNamespace() error {
 	return f.HumanReadableFlags.EnsureWithNamespace()
 }
 
-// ToPrinter attempts to find a composed set of PrintFlags suitable for
+// ToPrinter attempts to find a composed set of Flags suitable for
 // returning a printer based on current flag values.
-func (f *PrintFlags) ToPrinter() (printers.ResourcePrinter, error) {
+func (f *Flags) ToPrinter() (printers.ResourcePrinter, error) {
 	outputFormat := ""
 	if f.OutputFormat != nil {
 		outputFormat = *f.OutputFormat
@@ -65,7 +65,7 @@ func (f *PrintFlags) ToPrinter() (printers.ResourcePrinter, error) {
 
 // AddFlags receives a *cobra.Command reference and binds flags related to
 // human-readable printing to it.
-func (f *PrintFlags) AddFlags(flags *pflag.FlagSet) {
+func (f *Flags) AddFlags(flags *pflag.FlagSet) {
 	f.HumanReadableFlags.AddFlags(flags)
 
 	if f.OutputFormat != nil {
@@ -75,10 +75,10 @@ func (f *PrintFlags) AddFlags(flags *pflag.FlagSet) {
 
 // NewFlags returns flags associated with human-readable printing, with default
 // values set.
-func NewFlags() *PrintFlags {
+func NewFlags() *Flags {
 	outputFormat := ""
 
-	return &PrintFlags{
+	return &Flags{
 		OutputFormat:       &outputFormat,
 		HumanReadableFlags: NewHumanPrintFlags(),
 	}
