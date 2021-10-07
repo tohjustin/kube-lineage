@@ -172,6 +172,7 @@ func (o *CmdOptions) Validate() error {
 	klog.V(4).Infof("Namespace: %s", o.Namespace)
 	klog.V(4).Infof("RequestObject: %v", o.RequestObject)
 	klog.V(4).Infof("Flags.AllNamespaces: %t", *o.Flags.AllNamespaces)
+	klog.V(4).Infof("Flags.Scopes: %v", *o.Flags.Scopes)
 	klog.V(4).Infof("ClientFlags.Context: %s", *o.ClientFlags.Context)
 	klog.V(4).Infof("ClientFlags.Namespace: %s", *o.ClientFlags.Namespace)
 	klog.V(4).Infof("PrintFlags.OutputFormat: %s", *o.PrintFlags.OutputFormat)
@@ -199,6 +200,9 @@ func (o *CmdOptions) Run() error {
 	namespaces := []string{o.Namespace}
 	if o.Flags.AllNamespaces != nil && *o.Flags.AllNamespaces {
 		namespaces = append(namespaces, "")
+	}
+	if o.Flags.Scopes != nil {
+		namespaces = append(namespaces, *o.Flags.Scopes...)
 	}
 
 	// Fetch all resources in the cluster
