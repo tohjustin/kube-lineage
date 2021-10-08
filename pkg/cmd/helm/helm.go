@@ -114,20 +114,20 @@ func NewCmd(streams genericclioptions.IOStreams, name, parentCmdPath string) *co
 // Complete completes all the required options for command.
 func (o *CmdOptions) Complete(cmd *cobra.Command, args []string) error {
 	var err error
-	var releaseName string
+	var rlsName string
 	switch len(args) {
 	case 1:
-		releaseName = args[0]
+		rlsName = args[0]
 	default:
 		return fmt.Errorf("release name must be specified\nSee '%s -h' for help and examples", cmdPath)
 	}
-	o.RequestRelease = releaseName
 
-	o.HelmDriver = os.Getenv("HELM_DRIVER")
+	// Setup client
 	o.Namespace, _, err = o.ConfigFlags.ToRawKubeConfigLoader().Namespace()
 	if err != nil {
 		return err
 	}
+	o.HelmDriver = os.Getenv("HELM_DRIVER")
 	o.ActionConfig = new(action.Configuration)
 	err = o.ActionConfig.Init(o.ConfigFlags, o.Namespace, o.HelmDriver, klog.V(4).Infof)
 	if err != nil {
@@ -145,6 +145,10 @@ func (o *CmdOptions) Complete(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Resolve command arguments
+	o.RequestRelease = rlsName
+
+	// Setup printer
 	o.ToPrinter = func(withGroup bool, withNamespace bool) (printers.ResourcePrinterFunc, error) {
 		printFlags := o.PrintFlags.Copy()
 		if withGroup {
@@ -195,21 +199,21 @@ func (o *CmdOptions) Run() error {
 
 	// Fetch the release to ensure it exists before proceeding
 	client := action.NewGet(o.ActionConfig)
-	r, err := client.Run(o.RequestRelease)
+	rls, err := client.Run(o.RequestRelease)
 	if err != nil {
 		return err
 	}
-	klog.V(4).Infof("Release manifest:\n%s\n", r.Manifest)
+	klog.V(4).Infof("Release manifest:\n%s\n", rls.Manifest)
 
 	// Fetch all resources in the manifests from the cluster
-	objects, err := o.getManifestObjects(r)
+	objects, err := o.getManifestObjects(rls)
 	if err != nil {
 		return err
 	}
 	klog.V(4).Infof("Got %d objects from release manifest", len(objects))
 
 	// Construct relationship tree to print out
-	rootNode := releaseToNode(r)
+	rootNode := releaseToNode(rls)
 	rootUID := rootNode.GetUID()
 	nodeMap := graph.NodeMap{rootUID: rootNode}
 	for ix, obj := range objects {
@@ -232,7 +236,7 @@ func (o *CmdOptions) Run() error {
 	}
 
 	// Fetch the storage object
-	stgObj, err := o.getStorageObject(ctx, r)
+	stgObj, err := o.getStorageObject(ctx, rls)
 	if err != nil {
 		return err
 	}
@@ -261,10 +265,10 @@ func (o *CmdOptions) Run() error {
 
 // getManifestObjects fetches all objects found in the manifest of the provided
 // Helm release.
-func (o *CmdOptions) getManifestObjects(release *release.Release) ([]unstructuredv1.Unstructured, error) {
+func (o *CmdOptions) getManifestObjects(rls *release.Release) ([]unstructuredv1.Unstructured, error) {
 	var objects []unstructuredv1.Unstructured
-	name, ns := release.Name, release.Namespace
-	r := strings.NewReader(release.Manifest)
+	name, ns := rls.Name, rls.Namespace
+	r := strings.NewReader(rls.Manifest)
 	source := fmt.Sprintf("manifest for release \"%s\" in the namespace \"%s\"", name, ns)
 	result := resource.NewBuilder(o.ActionConfig.RESTClientGetter).
 		Unstructured().
@@ -292,7 +296,7 @@ func (o *CmdOptions) getManifestObjects(release *release.Release) ([]unstructure
 
 // getStorageObject fetches the underlying object that stores the information of
 // the provided Helm release.
-func (o *CmdOptions) getStorageObject(ctx context.Context, r *release.Release) (*unstructuredv1.Unstructured, error) {
+func (o *CmdOptions) getStorageObject(ctx context.Context, rls *release.Release) (*unstructuredv1.Unstructured, error) {
 	var gvr schema.GroupVersionResource
 	switch o.HelmDriver {
 	case "secret", "":
@@ -302,10 +306,10 @@ func (o *CmdOptions) getStorageObject(ctx context.Context, r *release.Release) (
 	case "memory", "sql":
 		return nil, nil
 	default:
-		panic("Unknown driver in HELM_DRIVER: " + o.HelmDriver)
+		return nil, fmt.Errorf("helm driver \"%s\" not supported", o.HelmDriver)
 	}
 	ri := o.DynamicClient.Resource(gvr).Namespace(o.Namespace)
-	return ri.Get(ctx, makeKey(r.Name, r.Version), metav1.GetOptions{})
+	return ri.Get(ctx, makeKey(rls.Name, rls.Version), metav1.GetOptions{})
 }
 
 // printObj prints the root object & its dependents in table format.
@@ -344,8 +348,8 @@ func (o *CmdOptions) printObj(nodeMap graph.NodeMap, rootUID types.UID) error {
 
 // getReleaseReadyStatus returns the ready & status value of a Helm release
 // object.
-func getReleaseReadyStatus(r *release.Release) (string, string) {
-	switch r.Info.Status {
+func getReleaseReadyStatus(rls *release.Release) (string, string) {
+	switch rls.Info.Status {
 	case release.StatusDeployed:
 		return "True", "Deployed"
 	case release.StatusFailed:
@@ -371,9 +375,9 @@ func getReleaseReadyStatus(r *release.Release) (string, string) {
 
 // releaseToNode converts a Helm release object into a Node in the relationship
 // tree.
-func releaseToNode(r *release.Release) *graph.Node {
+func releaseToNode(rls *release.Release) *graph.Node {
 	root := new(unstructuredv1.Unstructured)
-	ready, status := getReleaseReadyStatus(r)
+	ready, status := getReleaseReadyStatus(rls)
 	// Set "Ready" condition values based on the printer.objectReadyReasonJSONPath
 	// & printer.objectReadyStatusJSONPath paths
 	root.SetUnstructuredContent(
@@ -389,9 +393,9 @@ func releaseToNode(r *release.Release) *graph.Node {
 			},
 		},
 	)
-	root.SetName(r.Name)
-	root.SetNamespace(r.Namespace)
-	root.SetCreationTimestamp(metav1.Time{Time: r.Info.FirstDeployed.Time})
+	root.SetName(rls.Name)
+	root.SetNamespace(rls.Namespace)
+	root.SetCreationTimestamp(metav1.Time{Time: rls.Info.FirstDeployed.Time})
 	root.SetUID(types.UID(""))
 	return &graph.Node{
 		Unstructured: root,
