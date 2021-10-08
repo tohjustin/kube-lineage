@@ -13,17 +13,15 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	unstructuredv1 "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
-	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/cli-runtime/pkg/printers"
 	"k8s.io/cli-runtime/pkg/resource"
-	"k8s.io/client-go/dynamic"
-	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
 	cmdutil "k8s.io/kubectl/pkg/cmd/util"
 	"k8s.io/kubectl/pkg/util/templates"
 
+	"github.com/tohjustin/kube-lineage/internal/client"
 	"github.com/tohjustin/kube-lineage/internal/graph"
 	"github.com/tohjustin/kube-lineage/internal/log"
 	lineageprinters "github.com/tohjustin/kube-lineage/internal/printers"
@@ -49,25 +47,20 @@ var (
 		RELEASE_NAME is the name of a particular Helm release.`)
 )
 
-var (
-	configmapsResource = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "configmaps"}
-	secretsResource    = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "secrets"}
-)
-
 // CmdOptions contains all the options for running the helm command.
 type CmdOptions struct {
 	// RequestRelease represents the requested release
 	RequestRelease string
 
-	HelmDriver    string
-	ConfigFlags   *ConfigFlags
-	ActionConfig  *action.Configuration
-	ClientConfig  *rest.Config
-	DynamicClient dynamic.Interface
-	Namespace     string
+	HelmDriver   string
+	ActionConfig *action.Configuration
+	Flags        *Flags
+	Client       client.Interface
+	Namespace    string
 
-	PrintFlags *lineageprinters.Flags
-	ToPrinter  func(withGroup bool, withNamespace bool) (printers.ResourcePrinterFunc, error)
+	ClientFlags *client.Flags
+	PrintFlags  *lineageprinters.Flags
+	ToPrinter   func(withGroup bool, withNamespace bool) (printers.ResourcePrinterFunc, error)
 
 	genericclioptions.IOStreams
 }
@@ -75,7 +68,8 @@ type CmdOptions struct {
 // NewCmd returns an initialized Command for the helm command.
 func NewCmd(streams genericclioptions.IOStreams, name, parentCmdPath string) *cobra.Command {
 	o := &CmdOptions{
-		ConfigFlags: NewConfigFlags(),
+		Flags:       NewFlags(),
+		ClientFlags: client.NewFlags(),
 		PrintFlags:  lineageprinters.NewFlags(),
 		IOStreams:   streams,
 	}
@@ -104,7 +98,8 @@ func NewCmd(streams genericclioptions.IOStreams, name, parentCmdPath string) *co
 		},
 	}
 
-	o.ConfigFlags.AddFlags(cmd.Flags())
+	o.Flags.AddFlags(cmd.Flags())
+	o.ClientFlags.AddFlags(cmd.Flags())
 	o.PrintFlags.AddFlags(cmd.Flags())
 	log.AddFlags(cmd.Flags())
 
@@ -123,24 +118,17 @@ func (o *CmdOptions) Complete(cmd *cobra.Command, args []string) error {
 	}
 
 	// Setup client
-	o.Namespace, _, err = o.ConfigFlags.ToRawKubeConfigLoader().Namespace()
+	o.Namespace, _, err = o.ClientFlags.ToRawKubeConfigLoader().Namespace()
+	if err != nil {
+		return err
+	}
+	o.Client, err = o.ClientFlags.ToClient()
 	if err != nil {
 		return err
 	}
 	o.HelmDriver = os.Getenv("HELM_DRIVER")
 	o.ActionConfig = new(action.Configuration)
-	err = o.ActionConfig.Init(o.ConfigFlags, o.Namespace, o.HelmDriver, klog.V(4).Infof)
-	if err != nil {
-		return err
-	}
-	o.ClientConfig, err = o.ConfigFlags.ToRESTConfig()
-	if err != nil {
-		return err
-	}
-	o.ClientConfig.QPS = 1000
-	o.ClientConfig.Burst = 1000
-	o.ClientConfig.WarningHandler = rest.NoWarnings{}
-	o.DynamicClient, err = dynamic.NewForConfig(o.ClientConfig)
+	err = o.ActionConfig.Init(o.ClientFlags, o.Namespace, o.HelmDriver, klog.V(4).Infof)
 	if err != nil {
 		return err
 	}
@@ -180,8 +168,8 @@ func (o *CmdOptions) Validate() error {
 
 	klog.V(4).Infof("Namespace: %s", o.Namespace)
 	klog.V(4).Infof("RequestRelease: %v", o.RequestRelease)
-	klog.V(4).Infof("ConfigFlags.Context: %s", *o.ConfigFlags.Context)
-	klog.V(4).Infof("ConfigFlags.Namespace: %s", *o.ConfigFlags.Namespace)
+	klog.V(4).Infof("ClientFlags.Context: %s", *o.ClientFlags.Context)
+	klog.V(4).Infof("ClientFlags.Namespace: %s", *o.ClientFlags.Namespace)
 	klog.V(4).Infof("PrintFlags.OutputFormat: %s", *o.PrintFlags.OutputFormat)
 	klog.V(4).Infof("PrintFlags.NoHeaders: %t", *o.PrintFlags.HumanReadableFlags.NoHeaders)
 	klog.V(4).Infof("PrintFlags.ShowGroup: %t", *o.PrintFlags.HumanReadableFlags.ShowGroup)
@@ -297,19 +285,21 @@ func (o *CmdOptions) getManifestObjects(rls *release.Release) ([]unstructuredv1.
 // getStorageObject fetches the underlying object that stores the information of
 // the provided Helm release.
 func (o *CmdOptions) getStorageObject(ctx context.Context, rls *release.Release) (*unstructuredv1.Unstructured, error) {
-	var gvr schema.GroupVersionResource
+	var api client.APIResource
 	switch o.HelmDriver {
 	case "secret", "":
-		gvr = secretsResource
+		api = client.APIResource{Version: "v1", Kind: "Secret", Name: "secrets", Namespaced: true}
 	case "configmap":
-		gvr = configmapsResource
+		api = client.APIResource{Version: "v1", Kind: "ConfigMap", Name: "configmaps", Namespaced: true}
 	case "memory", "sql":
 		return nil, nil
 	default:
 		return nil, fmt.Errorf("helm driver \"%s\" not supported", o.HelmDriver)
 	}
-	ri := o.DynamicClient.Resource(gvr).Namespace(o.Namespace)
-	return ri.Get(ctx, makeKey(rls.Name, rls.Version), metav1.GetOptions{})
+	return o.Client.Get(ctx, makeKey(rls.Name, rls.Version), client.GetOptions{
+		APIResource: api,
+		Namespace:   o.Namespace,
+	})
 }
 
 // printObj prints the root object & its dependents in table format.
