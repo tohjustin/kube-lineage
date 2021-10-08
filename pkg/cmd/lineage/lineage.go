@@ -45,9 +45,9 @@ type CmdOptions struct {
 	// RequestObject represents the requested object.
 	RequestObject client.ObjectMeta
 
-	Flags      *Flags
-	KubeClient client.Interface
-	Namespace  string
+	Flags     *Flags
+	Client    client.Interface
+	Namespace string
 
 	ClientFlags *client.Flags
 	PrintFlags  *lineageprinters.Flags
@@ -116,15 +116,18 @@ func (o *CmdOptions) Complete(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("resource must be specified as <resource> <name> or <resource>/<name>\nSee '%s -h' for help and examples", cmdPath)
 	}
 
+	// Setup client
 	o.Namespace, _, err = o.ClientFlags.ToRawKubeConfigLoader().Namespace()
 	if err != nil {
 		return err
 	}
-	o.KubeClient, err = o.ClientFlags.ToClient()
+	o.Client, err = o.ClientFlags.ToClient()
 	if err != nil {
 		return err
 	}
-	api, err := o.KubeClient.ResolveAPIResource(resourceType)
+
+	// Resolve command arguments
+	api, err := o.Client.ResolveAPIResource(resourceType)
 	if err != nil {
 		return err
 	}
@@ -134,6 +137,7 @@ func (o *CmdOptions) Complete(cmd *cobra.Command, args []string) error {
 		Namespace:   o.Namespace,
 	}
 
+	// Setup printer
 	o.ToPrinter = func(withGroup bool, withNamespace bool) (printers.ResourcePrinterFunc, error) {
 		printFlags := o.PrintFlags.Copy()
 		if withGroup {
@@ -165,7 +169,7 @@ func (o *CmdOptions) Validate() error {
 		return fmt.Errorf("resource TYPE/NAME must be specified")
 	}
 
-	if o.KubeClient == nil {
+	if o.Client == nil {
 		return fmt.Errorf("client must be provided")
 	}
 
@@ -188,7 +192,7 @@ func (o *CmdOptions) Run() error {
 	ctx := context.Background()
 
 	// Fetch the provided object to ensure it exists before proceeding
-	root, err := o.KubeClient.Get(ctx, o.RequestObject.Name, client.GetOptions{
+	root, err := o.Client.Get(ctx, o.RequestObject.Name, client.GetOptions{
 		APIResource: o.RequestObject.APIResource,
 		Namespace:   o.Namespace,
 	})
@@ -206,7 +210,7 @@ func (o *CmdOptions) Run() error {
 	}
 
 	// Fetch all resources in the cluster
-	objects, err := o.KubeClient.List(ctx, client.ListOptions{Namespaces: namespaces})
+	objects, err := o.Client.List(ctx, client.ListOptions{Namespaces: namespaces})
 	if err != nil {
 		return err
 	}
