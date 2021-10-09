@@ -27,7 +27,7 @@ func (f *Flags) Copy() Flags {
 // configuration to it.
 func (f *Flags) AddFlags(flags *pflag.FlagSet) {
 	if f.AllNamespaces != nil {
-		flags.BoolVarP(f.AllNamespaces, flagAllNamespaces, flagAllNamespacesShorthand, *f.AllNamespaces, "If present, list object relationships across all namespaces.")
+		flags.BoolVarP(f.AllNamespaces, flagAllNamespaces, flagAllNamespacesShorthand, *f.AllNamespaces, "If present, list object relationships across all namespaces")
 	}
 	if f.Scopes != nil {
 		flags.StringSliceVarP(f.Scopes, flagScopes, flagScopesShorthand, *f.Scopes, "Accepts a comma separated list of additional namespaces to find relationships. You can also use multiple flag options like -S namespace1 -S namespace2...")

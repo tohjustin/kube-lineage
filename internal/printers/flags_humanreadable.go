@@ -78,13 +78,13 @@ func (f *HumanPrintFlags) AddFlags(flags *pflag.FlagSet) {
 		flags.StringSliceVarP(f.ColumnLabels, flagColumnLabels, flagColumnLabelsShorthand, *f.ColumnLabels, "Accepts a comma separated list of labels that are going to be presented as columns. Names are case-sensitive. You can also use multiple flag options like -L label1 -L label2...")
 	}
 	if f.NoHeaders != nil {
-		flags.BoolVar(f.NoHeaders, flagNoHeaders, *f.NoHeaders, "When using the default output format, don't print headers (default print headers).")
+		flags.BoolVar(f.NoHeaders, flagNoHeaders, *f.NoHeaders, "When using the default output format, don't print headers (default print headers)")
 	}
 	if f.ShowLabels != nil {
 		flags.BoolVar(f.ShowLabels, flagShowLabels, *f.ShowLabels, "When printing, show all labels as the last column (default hide labels column)")
 	}
 	if f.ShowGroup != nil {
-		flags.BoolVar(f.ShowGroup, flagShowGroup, *f.ShowGroup, "If present, include the resource group for the requested object(s).")
+		flags.BoolVar(f.ShowGroup, flagShowGroup, *f.ShowGroup, "If present, include the resource group for the requested object(s)")
 	}
 }
 
