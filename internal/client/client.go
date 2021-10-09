@@ -35,6 +35,7 @@ type ListOptions struct {
 }
 
 type Interface interface {
+	IsReachable() error
 	ResolveAPIResource(s string) (*APIResource, error)
 	Get(ctx context.Context, name string, opts GetOptions) (*unstructuredv1.Unstructured, error)
 	List(ctx context.Context, opts ListOptions) (*unstructuredv1.UnstructuredList, error)
@@ -78,6 +79,12 @@ func (f *Flags) ToClient() (Interface, error) {
 	}
 
 	return cli, nil
+}
+
+// IsReachable tests connectivity to the cluster.
+func (c *client) IsReachable() error {
+	_, err := c.discoveryClient.ServerVersion()
+	return err
 }
 
 func (c *client) ResolveAPIResource(s string) (*APIResource, error) {

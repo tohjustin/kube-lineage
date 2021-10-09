@@ -49,7 +49,7 @@ var (
 
 // CmdOptions contains all the options for running the helm command.
 type CmdOptions struct {
-	// RequestRelease represents the requested release
+	// RequestRelease represents the requested Helm release.
 	RequestRelease string
 
 	HelmDriver   string
@@ -109,10 +109,9 @@ func NewCmd(streams genericclioptions.IOStreams, name, parentCmdPath string) *co
 // Complete completes all the required options for command.
 func (o *CmdOptions) Complete(cmd *cobra.Command, args []string) error {
 	var err error
-	var rlsName string
 	switch len(args) {
 	case 1:
-		rlsName = args[0]
+		o.RequestRelease = args[0]
 	default:
 		return fmt.Errorf("release name must be specified\nSee '%s -h' for help and examples", cmdPath)
 	}
@@ -132,9 +131,6 @@ func (o *CmdOptions) Complete(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-
-	// Resolve command arguments
-	o.RequestRelease = rlsName
 
 	// Setup printer
 	o.ToPrinter = func(withGroup bool, withNamespace bool) (printers.ResourcePrinterFunc, error) {
@@ -166,6 +162,10 @@ func (o *CmdOptions) Validate() error {
 		return fmt.Errorf("release NAME must be specified")
 	}
 
+	if o.Client == nil {
+		return fmt.Errorf("client must be provided")
+	}
+
 	klog.V(4).Infof("Namespace: %s", o.Namespace)
 	klog.V(4).Infof("RequestRelease: %v", o.RequestRelease)
 	klog.V(4).Infof("Flags.AllNamespaces: %t", *o.Flags.AllNamespaces)
@@ -176,7 +176,6 @@ func (o *CmdOptions) Validate() error {
 	klog.V(4).Infof("PrintFlags.NoHeaders: %t", *o.PrintFlags.HumanReadableFlags.NoHeaders)
 	klog.V(4).Infof("PrintFlags.ShowGroup: %t", *o.PrintFlags.HumanReadableFlags.ShowGroup)
 	klog.V(4).Infof("PrintFlags.ShowLabels: %t", *o.PrintFlags.HumanReadableFlags.ShowLabels)
-	klog.V(4).Infof("PrintFlags.WithNamespace: %t", o.PrintFlags.HumanReadableFlags.WithNamespace)
 
 	return nil
 }
@@ -184,8 +183,12 @@ func (o *CmdOptions) Validate() error {
 // Run implements all the necessary functionality for command.
 //nolint:funlen
 func (o *CmdOptions) Run() error {
-	var err error
 	ctx := context.Background()
+
+	// First check if Kubernetes cluster is reachable
+	if err := o.Client.IsReachable(); err != nil {
+		return err
+	}
 
 	// Fetch the release to ensure it exists before proceeding
 	helmClient := action.NewGet(o.ActionConfig)
@@ -197,7 +200,7 @@ func (o *CmdOptions) Run() error {
 
 	// Fetch all Helm release objects (i.e. resources found in the helm release
 	// manifests) from the cluster
-	rlsObjs, err := o.getManifestObjects(rls)
+	rlsObjs, err := o.getManifestObjects(ctx, rls)
 	if err != nil {
 		return err
 	}
@@ -264,7 +267,7 @@ func (o *CmdOptions) Run() error {
 
 // getManifestObjects fetches all objects found in the manifest of the provided
 // Helm release.
-func (o *CmdOptions) getManifestObjects(rls *release.Release) ([]unstructuredv1.Unstructured, error) {
+func (o *CmdOptions) getManifestObjects(_ context.Context, rls *release.Release) ([]unstructuredv1.Unstructured, error) {
 	var objs []unstructuredv1.Unstructured
 	name, ns := rls.Name, rls.Namespace
 	r := strings.NewReader(rls.Manifest)

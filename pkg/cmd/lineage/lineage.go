@@ -42,8 +42,10 @@ var (
 
 // CmdOptions contains all the options for running the lineage command.
 type CmdOptions struct {
-	// RequestObject represents the requested object.
-	RequestObject client.ObjectMeta
+	// RequestType represents the type of the requested object.
+	RequestType string
+	// RequestName represents the name of the requested object.
+	RequestName string
 
 	Flags     *Flags
 	Client    client.Interface
@@ -100,18 +102,17 @@ func NewCmd(streams genericclioptions.IOStreams, name, parentCmdPath string) *co
 // Complete completes all the required options for command.
 func (o *CmdOptions) Complete(cmd *cobra.Command, args []string) error {
 	var err error
-	var resourceType, resourceName string
 	switch len(args) {
 	case 1:
 		resourceTokens := strings.SplitN(args[0], "/", 2)
 		if len(resourceTokens) != 2 {
 			return fmt.Errorf("arguments in <resource>/<name> form must have a single resource and name\nSee '%s -h' for help and examples", cmdPath)
 		}
-		resourceType = resourceTokens[0]
-		resourceName = resourceTokens[1]
+		o.RequestType = resourceTokens[0]
+		o.RequestName = resourceTokens[1]
 	case 2:
-		resourceType = args[0]
-		resourceName = args[1]
+		o.RequestType = args[0]
+		o.RequestName = args[1]
 	default:
 		return fmt.Errorf("resource must be specified as <resource> <name> or <resource>/<name>\nSee '%s -h' for help and examples", cmdPath)
 	}
@@ -124,17 +125,6 @@ func (o *CmdOptions) Complete(cmd *cobra.Command, args []string) error {
 	o.Client, err = o.ClientFlags.ToClient()
 	if err != nil {
 		return err
-	}
-
-	// Resolve command arguments
-	api, err := o.Client.ResolveAPIResource(resourceType)
-	if err != nil {
-		return err
-	}
-	o.RequestObject = client.ObjectMeta{
-		APIResource: *api,
-		Name:        resourceName,
-		Namespace:   o.Namespace,
 	}
 
 	// Setup printer
@@ -163,10 +153,8 @@ func (o *CmdOptions) Complete(cmd *cobra.Command, args []string) error {
 
 // Validate validates all the required options for the lineage command.
 func (o *CmdOptions) Validate() error {
-	if len(o.RequestObject.Name) == 0 ||
-		o.RequestObject.GroupVersionResource().Empty() ||
-		o.RequestObject.GroupVersionKind().Empty() {
-		return fmt.Errorf("resource TYPE/NAME must be specified")
+	if len(o.RequestType) == 0 || len(o.RequestName) == 0 {
+		return fmt.Errorf("resource TYPE & NAME must be specified")
 	}
 
 	if o.Client == nil {
@@ -174,7 +162,8 @@ func (o *CmdOptions) Validate() error {
 	}
 
 	klog.V(4).Infof("Namespace: %s", o.Namespace)
-	klog.V(4).Infof("RequestObject: %v", o.RequestObject)
+	klog.V(4).Infof("RequestType: %v", o.RequestType)
+	klog.V(4).Infof("RequestName: %v", o.RequestName)
 	klog.V(4).Infof("Flags.AllNamespaces: %t", *o.Flags.AllNamespaces)
 	klog.V(4).Infof("Flags.Scopes: %v", *o.Flags.Scopes)
 	klog.V(4).Infof("ClientFlags.Context: %s", *o.ClientFlags.Context)
@@ -191,9 +180,23 @@ func (o *CmdOptions) Validate() error {
 func (o *CmdOptions) Run() error {
 	ctx := context.Background()
 
+	// First check if Kubernetes cluster is reachable
+	if err := o.Client.IsReachable(); err != nil {
+		return err
+	}
+
 	// Fetch the provided object to ensure it exists before proceeding
-	root, err := o.Client.Get(ctx, o.RequestObject.Name, client.GetOptions{
-		APIResource: o.RequestObject.APIResource,
+	api, err := o.Client.ResolveAPIResource(o.RequestType)
+	if err != nil {
+		return err
+	}
+	obj := client.ObjectMeta{
+		APIResource: *api,
+		Name:        o.RequestName,
+		Namespace:   o.Namespace,
+	}
+	root, err := o.Client.Get(ctx, obj.Name, client.GetOptions{
+		APIResource: obj.APIResource,
 		Namespace:   o.Namespace,
 	})
 	if err != nil {
