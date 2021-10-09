@@ -220,7 +220,7 @@ func (o *CmdOptions) Run() error {
 	objects.Items = append(objects.Items, *root)
 
 	// Find all dependents of the root object
-	nodeMap := graph.ResolveDependents(objects.Items, root.GetUID())
+	nodeMap := graph.ResolveDependents(objects.Items, []types.UID{root.GetUID()})
 
 	// Print output
 	return o.printObj(nodeMap, root.GetUID())

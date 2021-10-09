@@ -205,12 +205,13 @@ func (n NodeList) Swap(i, j int) {
 // NodeMap contains a relationship tree stored as a map of nodes.
 type NodeMap map[types.UID]*Node
 
-// ResolveDependents resolves all dependents of the provided root object and
-// returns a relationship tree.
+// ResolveDependents resolves all dependents of the provided objects and returns
+// a relationship tree.
 //nolint:funlen,gocognit,gocyclo
-func ResolveDependents(objects []unstructuredv1.Unstructured, rootUID types.UID) NodeMap {
+func ResolveDependents(objects []unstructuredv1.Unstructured, uids []types.UID) NodeMap {
 	// Create global node maps of all objects, one mapped by node UIDs & the other
-	// mapped by node keys
+	// mapped by node keys. This step also helps deduplicate the list of provided
+	// objects
 	globalMapByUID := map[types.UID]*Node{}
 	globalMapByKey := map[ObjectReferenceKey]*Node{}
 	for ix, o := range objects {
@@ -226,6 +227,9 @@ func ResolveDependents(objects []unstructuredv1.Unstructured, rootUID types.UID)
 			Dependents:      map[types.UID]RelationshipSet{},
 		}
 		uid, key := node.UID, node.GetObjectReferenceKey()
+		if n, ok := globalMapByUID[uid]; ok {
+			klog.V(4).Infof("Duplicated %s.%s resource \"%s\" in namespace \"%s\"", n.Kind, n.Group, n.Name, n.Namespace)
+		}
 		globalMapByUID[uid] = &node
 		globalMapByKey[key] = &node
 
@@ -422,11 +426,14 @@ func ResolveDependents(objects []unstructuredv1.Unstructured, rootUID types.UID)
 		updateRelationships(node, rmap)
 	}
 
-	// Create submap of the root node & its dependents from the global map
+	// Create submap containing the provided objects & their dependents from the
+	// global map
 	nodeMap, uidQueue, uidSet := NodeMap{}, []types.UID{}, map[types.UID]struct{}{}
-	if node := globalMapByUID[rootUID]; node != nil {
-		nodeMap[rootUID] = node
-		uidQueue = append(uidQueue, rootUID)
+	for _, uid := range uids {
+		if node := globalMapByUID[uid]; node != nil {
+			nodeMap[uid] = node
+			uidQueue = append(uidQueue, uid)
+		}
 	}
 	for {
 		if len(uidQueue) == 0 {
@@ -453,6 +460,6 @@ func ResolveDependents(objects []unstructuredv1.Unstructured, rootUID types.UID)
 		}
 	}
 
-	klog.V(4).Infof("Resolved %d dependents for root object (uid: %s)", len(nodeMap)-1, rootUID)
+	klog.V(4).Infof("Resolved %d dependents for %d objects", len(nodeMap)-1, len(uids))
 	return nodeMap
 }
