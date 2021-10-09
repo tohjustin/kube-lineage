@@ -7,6 +7,8 @@ import (
 const (
 	flagAllNamespaces          = "all-namespaces"
 	flagAllNamespacesShorthand = "A"
+	flagDepth                  = "depth"
+	flagDepthShorthand         = "d"
 	flagScopes                 = "scopes"
 	flagScopesShorthand        = "S"
 )
@@ -14,6 +16,7 @@ const (
 // Flags composes common configuration flag structs used in the command.
 type Flags struct {
 	AllNamespaces *bool
+	Depth         *uint
 	Scopes        *[]string
 }
 
@@ -29,6 +32,9 @@ func (f *Flags) AddFlags(flags *pflag.FlagSet) {
 	if f.AllNamespaces != nil {
 		flags.BoolVarP(f.AllNamespaces, flagAllNamespaces, flagAllNamespacesShorthand, *f.AllNamespaces, "If present, list object relationships across all namespaces")
 	}
+	if f.Depth != nil {
+		flags.UintVarP(f.Depth, flagDepth, flagDepthShorthand, *f.Depth, "Maximum depth to find relationships")
+	}
 	if f.Scopes != nil {
 		flags.StringSliceVarP(f.Scopes, flagScopes, flagScopesShorthand, *f.Scopes, "Accepts a comma separated list of additional namespaces to find relationships. You can also use multiple flag options like -S namespace1 -S namespace2...")
 	}
@@ -38,10 +44,12 @@ func (f *Flags) AddFlags(flags *pflag.FlagSet) {
 // with default values set.
 func NewFlags() *Flags {
 	allNamespaces := false
+	depth := uint(0)
 	scopes := []string{}
 
 	return &Flags{
 		AllNamespaces: &allNamespaces,
+		Depth:         &depth,
 		Scopes:        &scopes,
 	}
 }

@@ -165,6 +165,7 @@ func (o *CmdOptions) Validate() error {
 	klog.V(4).Infof("RequestType: %v", o.RequestType)
 	klog.V(4).Infof("RequestName: %v", o.RequestName)
 	klog.V(4).Infof("Flags.AllNamespaces: %t", *o.Flags.AllNamespaces)
+	klog.V(4).Infof("Flags.Depth: %v", *o.Flags.Depth)
 	klog.V(4).Infof("Flags.Scopes: %v", *o.Flags.Scopes)
 	klog.V(4).Infof("ClientFlags.Context: %s", *o.ClientFlags.Context)
 	klog.V(4).Infof("ClientFlags.Namespace: %s", *o.ClientFlags.Namespace)
@@ -255,7 +256,7 @@ func (o *CmdOptions) printObj(nodeMap graph.NodeMap, rootUID types.UID) error {
 	}
 
 	// Generate Table Rows for printing
-	table, err := lineageprinters.PrintNode(nodeMap, root, withGroup)
+	table, err := lineageprinters.PrintNode(nodeMap, root, *o.Flags.Depth, withGroup)
 	if err != nil {
 		return err
 	}

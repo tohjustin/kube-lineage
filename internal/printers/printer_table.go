@@ -345,7 +345,7 @@ func nodeToTableRow(node *graph.Node, rset graph.RelationshipSet, namePrefix str
 }
 
 // PrintNode converts the provided node & its dependents into table rows.
-func PrintNode(nodeMap graph.NodeMap, root *graph.Node, withGroup bool) (*metav1.Table, error) {
+func PrintNode(nodeMap graph.NodeMap, root *graph.Node, maxDepth uint, withGroup bool) (*metav1.Table, error) {
 	// Track every object kind in the node map & the groups that they belong to.
 	kindToGroupSetMap := map[string](map[string]struct{}){}
 	for _, node := range nodeMap {
@@ -381,7 +381,7 @@ func PrintNode(nodeMap graph.NodeMap, root *graph.Node, withGroup bool) (*metav1
 	var rows []metav1.TableRow
 	row := nodeToTableRow(root, nil, "", showGroupFn)
 	uidSet := map[types.UID]struct{}{}
-	dependentRows, err := printNodeDependents(nodeMap, uidSet, root, "", sortDependentsFn, showGroupFn)
+	dependentRows, err := printNodeDependents(nodeMap, uidSet, root, "", 1, maxDepth, sortDependentsFn, showGroupFn)
 	if err != nil {
 		return nil, err
 	}
@@ -395,12 +395,15 @@ func PrintNode(nodeMap graph.NodeMap, root *graph.Node, withGroup bool) (*metav1
 	return &table, nil
 }
 
-// printNodeDependents converts the provided node's dependents into table rows.
+// printNodeDependents converts the dependents of the provided node into table
+// rows.
 func printNodeDependents(
 	nodeMap graph.NodeMap,
 	uidSet map[types.UID]struct{},
 	node *graph.Node,
 	prefix string,
+	depth uint,
+	maxDepth uint,
 	sortDependentsFn func(d map[types.UID]graph.RelationshipSet) []types.UID,
 	showGroupFn func(kind string) bool) ([]metav1.TableRow, error) {
 	rows := make([]metav1.TableRow, 0, len(nodeMap))
@@ -430,12 +433,14 @@ func printNodeDependents(
 			return nil, fmt.Errorf("dependent object (uid: %s) not found", childUID)
 		}
 		row := nodeToTableRow(child, rset, childPrefix, showGroupFn)
-		dependentRows, err := printNodeDependents(nodeMap, uidSet, child, dependentPrefix, sortDependentsFn, showGroupFn)
-		if err != nil {
-			return nil, err
-		}
 		rows = append(rows, row)
-		rows = append(rows, dependentRows...)
+		if maxDepth == 0 || depth < maxDepth {
+			dependentRows, err := printNodeDependents(nodeMap, uidSet, child, dependentPrefix, depth+1, maxDepth, sortDependentsFn, showGroupFn)
+			if err != nil {
+				return nil, err
+			}
+			rows = append(rows, dependentRows...)
+		}
 	}
 
 	return rows, nil
