@@ -1,12 +1,12 @@
 # kube-lineage
 
 [![build](https://github.com/tohjustin/kube-lineage/actions/workflows/build.yaml/badge.svg)](https://github.com/tohjustin/kube-lineage/actions/workflows/build.yaml)
-[![release](https://aegisbadges.appspot.com/static?subject=release&status=v0.2.0&color=318FE0)](https://github.com/tohjustin/kube-lineage/releases)
+[![release](https://aegisbadges.appspot.com/static?subject=release&status=v0.3.0&color=318FE0)](https://github.com/tohjustin/kube-lineage/releases)
 [![kubernetes compatibility](https://aegisbadges.appspot.com/static?subject=k8s%20compatibility&status=v1.19%2B&color=318FE0)](https://endoflife.date/kubernetes)
 [![helm compatibility](https://aegisbadges.appspot.com/static?subject=helm%20compatibility&status=v3&color=318FE0)](https://endoflife.date/kubernetes)
 [![license](https://aegisbadges.appspot.com/static?subject=license&status=Apache-2.0&color=318FE0)](./LICENSE.md)
 
-A CLI tool to display all dependents of a Kubernetes object.
+A CLI tool to display all dependents of an object in a Kubernetes cluster.
 
 ```shell
 $ kube-lineage deploy/coredns
@@ -38,7 +38,11 @@ kube-system           └── Secret/metrics-server-token-sz96w               
 kube-system               └── Pod/metrics-server-7b4f8b595-mxtfp                            1/1     Running   30m   [PodVolume]
 kube-system                   └── Service/metrics-server                                    -                 30m   [Service]
 kube-system                       └── EndpointSlice.discovery.k8s.io/metrics-server-lbhb9   -                 30m   [ControllerReference OwnerReference]
+```
 
+Use the `helm` subcommand to display Helm release resources & their respective dependents in a Kubernetes cluster.
+
+```shell
 $ kube-lineage helm traefik -o wide
 NAMESPACE     NAME                                                                          READY   STATUS     AGE   RELATIONSHIPS
 kube-system   traefik                                                                       True    Deployed   30m   []
@@ -67,6 +71,24 @@ kube-system   │   └── Pod/traefik-5dd496474-7mj6c                       
 kube-system   ├── Service/traefik                                                           -                  30m   [HelmRelease]
 kube-system   ├── Service/traefik-prometheus                                                -                  30m   [HelmRelease]
 kube-system   └── ServiceAccount/traefik                                                    -                  30m   [HelmRelease]
+
+$ kube-lineage helm kube-state-metrics -n monitoring-system -L app.kubernetes.io/managed-by -L owner
+NAMESPACE           NAME                                                                 READY   STATUS    AGE   MANAGED-BY   OWNER
+monitoring-system   kube-state-metrics                                                   True    Deployed  25m
+                    ├── ClusterRole/kube-state-metrics                                   -                 25m   Helm
+                    │   └── ClusterRoleBinding/kube-state-metrics                        -                 25m   Helm
+monitoring-system   │       └── ServiceAccount/kube-state-metrics                        -                 25m   Helm
+monitoring-system   │           └── Secret/kube-state-metrics-token-pq87v                -                 25m
+monitoring-system   │               └── Pod/kube-state-metrics-6cb9b94fdf-bkz22          1/1     Running   25m
+monitoring-system   │                   └── Service/kube-state-metrics                   -                 25m   Helm
+monitoring-system   │                       └── EndpointSlice/kube-state-metrics-zkggx   -                 25m
+                    ├── ClusterRoleBinding/kube-state-metrics                            -                 25m   Helm
+monitoring-system   ├── Deployment/kube-state-metrics                                    1/1               25m   Helm
+monitoring-system   │   └── ReplicaSet/kube-state-metrics-6cb9b94fdf                     1/1               25m
+monitoring-system   │       └── Pod/kube-state-metrics-6cb9b94fdf-bkz22                  1/1     Running   25m
+monitoring-system   ├── Secret/sh.helm.release.v1.kube-state-metrics.v1                  -                 25m                helm
+monitoring-system   ├── Service/kube-state-metrics                                       -                 25m   Helm
+monitoring-system   └── ServiceAccount/kube-state-metrics                                -                 25m   Helm
 ```
 
 List of supported relationships used for discovering dependent objects:
