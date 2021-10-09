@@ -160,8 +160,7 @@ func (c *client) List(ctx context.Context, opts ListOptions) (*unstructuredv1.Un
 		}
 	}
 
-	// Ensure we're not fetching from duplicated namespaces & determine the scope
-	// for listing objects
+	// Deduplicate list of namespaces & determine the scope for listing objects
 	isClusterScopeRequest, nsSet := false, make(map[string]struct{})
 	if len(opts.Namespaces) == 0 {
 		isClusterScopeRequest = true
@@ -178,12 +177,12 @@ func (c *client) List(ctx context.Context, opts ListOptions) (*unstructuredv1.Un
 	var items []unstructuredv1.Unstructured
 	createListFn := func(ctx context.Context, api APIResource, ns string) func() error {
 		return func() error {
-			objects, err := c.listByAPI(ctx, api, ns)
+			objs, err := c.listByAPI(ctx, api, ns)
 			if err != nil {
 				return err
 			}
 			mu.Lock()
-			items = append(items, objects.Items...)
+			items = append(items, objs.Items...)
 			mu.Unlock()
 			return nil
 		}

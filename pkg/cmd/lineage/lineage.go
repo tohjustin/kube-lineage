@@ -210,17 +210,17 @@ func (o *CmdOptions) Run() error {
 	}
 
 	// Fetch all resources in the cluster
-	objects, err := o.Client.List(ctx, client.ListOptions{Namespaces: namespaces})
+	objs, err := o.Client.List(ctx, client.ListOptions{Namespaces: namespaces})
 	if err != nil {
 		return err
 	}
 
 	// Include root object into objects to handle cases where user has access
 	// to get the root object but unable to list its resource type
-	objects.Items = append(objects.Items, *root)
+	objs.Items = append(objs.Items, *root)
 
 	// Find all dependents of the root object
-	nodeMap := graph.ResolveDependents(objects.Items, []types.UID{root.GetUID()})
+	nodeMap := graph.ResolveDependents(objs.Items, []types.UID{root.GetUID()})
 
 	// Print output
 	return o.printObj(nodeMap, root.GetUID())
