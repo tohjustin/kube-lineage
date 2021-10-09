@@ -168,6 +168,8 @@ func (o *CmdOptions) Validate() error {
 
 	klog.V(4).Infof("Namespace: %s", o.Namespace)
 	klog.V(4).Infof("RequestRelease: %v", o.RequestRelease)
+	klog.V(4).Infof("Flags.AllNamespaces: %t", *o.Flags.AllNamespaces)
+	klog.V(4).Infof("Flags.Scopes: %v", *o.Flags.Scopes)
 	klog.V(4).Infof("ClientFlags.Context: %s", *o.ClientFlags.Context)
 	klog.V(4).Infof("ClientFlags.Namespace: %s", *o.ClientFlags.Namespace)
 	klog.V(4).Infof("PrintFlags.OutputFormat: %s", *o.PrintFlags.OutputFormat)
@@ -186,66 +188,75 @@ func (o *CmdOptions) Run() error {
 	ctx := context.Background()
 
 	// Fetch the release to ensure it exists before proceeding
-	client := action.NewGet(o.ActionConfig)
-	rls, err := client.Run(o.RequestRelease)
+	helmClient := action.NewGet(o.ActionConfig)
+	rls, err := helmClient.Run(o.RequestRelease)
 	if err != nil {
 		return err
 	}
 	klog.V(4).Infof("Release manifest:\n%s\n", rls.Manifest)
 
-	// Fetch all resources in the manifests from the cluster
-	objects, err := o.getManifestObjects(rls)
+	// Fetch all Helm release objects (i.e. resources found in the helm release
+	// manifests) from the cluster
+	rlsObjs, err := o.getManifestObjects(rls)
 	if err != nil {
 		return err
 	}
-	klog.V(4).Infof("Got %d objects from release manifest", len(objects))
+	klog.V(4).Infof("Got %d objects from release manifest", len(rlsObjs))
 
-	// Construct relationship tree to print out
-	rootNode := releaseToNode(rls)
-	rootUID := rootNode.GetUID()
-	nodeMap := graph.NodeMap{rootUID: rootNode}
-	for ix, obj := range objects {
-		gvk := obj.GroupVersionKind()
-		node := graph.Node{
-			Unstructured:    &objects[ix],
-			UID:             obj.GetUID(),
-			Name:            obj.GetName(),
-			Namespace:       obj.GetNamespace(),
-			Group:           gvk.Group,
-			Kind:            gvk.Kind,
-			OwnerReferences: obj.GetOwnerReferences(),
-			Dependents:      map[types.UID]graph.RelationshipSet{},
-		}
-		uid := node.UID
-		nodeMap[uid] = &node
-		rootNode.Dependents[uid] = graph.RelationshipSet{
-			graph.RelationshipHelmRelease: {},
-		}
-	}
-
-	// Fetch the storage object
+	// Fetch the Helm storage object
 	stgObj, err := o.getStorageObject(ctx, rls)
 	if err != nil {
 		return err
 	}
-	if stgObj != nil {
-		gvk := stgObj.GroupVersionKind()
-		node := graph.Node{
-			Unstructured:    stgObj,
-			UID:             stgObj.GetUID(),
-			Name:            stgObj.GetName(),
-			Namespace:       stgObj.GetNamespace(),
-			Group:           gvk.Group,
-			Kind:            gvk.Kind,
-			OwnerReferences: stgObj.GetOwnerReferences(),
-			Dependents:      map[types.UID]graph.RelationshipSet{},
-		}
-		uid := node.UID
-		nodeMap[uid] = &node
-		rootNode.Dependents[uid] = graph.RelationshipSet{
-			graph.RelationshipHelmStorage: {},
-		}
+
+	// Determine the namespaces to list objects
+	var namespaces []string
+	nsSet := map[string]struct{}{o.Namespace: {}}
+	for _, obj := range rlsObjs {
+		nsSet[obj.GetNamespace()] = struct{}{}
 	}
+	for ns := range nsSet {
+		namespaces = append(namespaces, ns)
+	}
+	if o.Flags.AllNamespaces != nil && *o.Flags.AllNamespaces {
+		namespaces = append(namespaces, "")
+	}
+	if o.Flags.Scopes != nil {
+		namespaces = append(namespaces, *o.Flags.Scopes...)
+	}
+
+	// Fetch all resources in the cluster
+	objs, err := o.Client.List(ctx, client.ListOptions{Namespaces: namespaces})
+	if err != nil {
+		return err
+	}
+
+	// Include release objects into objects to handle cases where user has access
+	// to get the release objects but unable to list its resource type
+	objs.Items = append(objs.Items, rlsObjs...)
+
+	// Collect UIDs from release & storage objects
+	var uids []types.UID
+	for _, obj := range rlsObjs {
+		uids = append(uids, obj.GetUID())
+	}
+	if stgObj != nil {
+		uids = append(uids, stgObj.GetUID())
+	}
+
+	// Find all dependents of the release & storage objects
+	nodeMap := graph.ResolveDependents(objs.Items, uids)
+
+	// Add the Helm release object to the relationship tree
+	rootNode := newReleaseNode(rls)
+	for _, obj := range rlsObjs {
+		rootNode.AddDependent(obj.GetUID(), graph.RelationshipHelmRelease)
+	}
+	if stgObj != nil {
+		rootNode.AddDependent(stgObj.GetUID(), graph.RelationshipHelmStorage)
+	}
+	rootUID := rootNode.GetUID()
+	nodeMap[rootUID] = rootNode
 
 	// Print output
 	return o.printObj(nodeMap, rootUID)
@@ -254,7 +265,7 @@ func (o *CmdOptions) Run() error {
 // getManifestObjects fetches all objects found in the manifest of the provided
 // Helm release.
 func (o *CmdOptions) getManifestObjects(rls *release.Release) ([]unstructuredv1.Unstructured, error) {
-	var objects []unstructuredv1.Unstructured
+	var objs []unstructuredv1.Unstructured
 	name, ns := rls.Name, rls.Namespace
 	r := strings.NewReader(rls.Manifest)
 	source := fmt.Sprintf("manifest for release \"%s\" in the namespace \"%s\"", name, ns)
@@ -276,10 +287,10 @@ func (o *CmdOptions) getManifestObjects(rls *release.Release) ([]unstructuredv1.
 		if err != nil {
 			return nil, err
 		}
-		objects = append(objects, unstructuredv1.Unstructured{Object: u})
+		objs = append(objs, unstructuredv1.Unstructured{Object: u})
 	}
 
-	return objects, nil
+	return objs, nil
 }
 
 // getStorageObject fetches the underlying object that stores the information of
@@ -363,9 +374,9 @@ func getReleaseReadyStatus(rls *release.Release) (string, string) {
 	}
 }
 
-// releaseToNode converts a Helm release object into a Node in the relationship
+// newReleaseNode converts a Helm release object into a Node in the relationship
 // tree.
-func releaseToNode(rls *release.Release) *graph.Node {
+func newReleaseNode(rls *release.Release) *graph.Node {
 	root := new(unstructuredv1.Unstructured)
 	ready, status := getReleaseReadyStatus(rls)
 	// Set "Ready" condition values based on the printer.objectReadyReasonJSONPath
@@ -383,10 +394,11 @@ func releaseToNode(rls *release.Release) *graph.Node {
 			},
 		},
 	)
+	root.SetUID(types.UID(""))
 	root.SetName(rls.Name)
 	root.SetNamespace(rls.Namespace)
 	root.SetCreationTimestamp(metav1.Time{Time: rls.Info.FirstDeployed.Time})
-	root.SetUID(types.UID(""))
+
 	return &graph.Node{
 		Unstructured: root,
 		UID:          root.GetUID(),

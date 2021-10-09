@@ -39,18 +39,34 @@ kube-system               └── Pod/metrics-server-7b4f8b595-mxtfp          
 kube-system                   └── Service/metrics-server                                    -                 30m   [Service]
 kube-system                       └── EndpointSlice.discovery.k8s.io/metrics-server-lbhb9   -                 30m   [ControllerReference OwnerReference]
 
-$ kube-lineage helm traefik --show-labels
-NAMESPACE     NAME                              READY   STATUS     AGE   LABELS
-kube-system   traefik                           True    Deployed   30m   <none>
-              ├── ClusterRole/traefik           -                  30m   app.kubernetes.io/managed-by=Helm
-              ├── ClusterRoleBinding/traefik    -                  30m   app.kubernetes.io/managed-by=Helm
-kube-system   ├── ConfigMap/traefik             -                  30m   app.kubernetes.io/managed-by=Helm,app=traefik,chart=traefik-1.81.0,heritage=Helm,release=traefik
-kube-system   ├── ConfigMap/traefik-test        -                  30m   app.kubernetes.io/managed-by=Helm,app=traefik,chart=traefik-1.81.0,heritage=Helm,release=traefik
-kube-system   ├── Deployment/traefik            1/1                30m   app.kubernetes.io/managed-by=Helm,app=traefik,chart=traefik-1.81.0,heritage=Helm,release=traefik
-kube-system   ├── Secret/traefik-default-cert   -                  30m   app.kubernetes.io/managed-by=Helm,app=traefik,chart=traefik-1.81.0,heritage=Helm,release=traefik
-kube-system   ├── Service/traefik               -                  30m   app.kubernetes.io/managed-by=Helm,app=traefik,chart=traefik-1.81.0,heritage=Helm,release=traefik
-kube-system   ├── Service/traefik-prometheus    -                  30m   app.kubernetes.io/managed-by=Helm,app=traefik,chart=traefik-1.81.0,heritage=Helm,release=traefik
-kube-system   └── ServiceAccount/traefik        -                  30m   app.kubernetes.io/managed-by=Helm
+$ kube-lineage helm traefik -o wide
+NAMESPACE     NAME                                                                          READY   STATUS     AGE   RELATIONSHIPS
+kube-system   traefik                                                                       True    Deployed   30m   []
+              ├── ClusterRole/traefik                                                       -                  30m   [HelmRelease]
+              │   └── ClusterRoleBinding/traefik                                            -                  30m   [ClusterRoleBindingRole]
+kube-system   │       └── ServiceAccount/traefik                                            -                  30m   [ClusterRoleBindingSubject]
+kube-system   │           └── Secret/traefik-token-zgvr4                                    -                  30m   [ServiceAccountSecret]
+kube-system   │               └── Pod/traefik-5dd496474-7mj6c                               1/1     Running    30m   [PodVolume]
+kube-system   │                   ├── Service/traefik                                       -                  30m   [Service]
+kube-system   │                   │   ├── DaemonSet/svclb-traefik                           1/1                30m   [ControllerReference OwnerReference]
+kube-system   │                   │   │   ├── ControllerRevision/svclb-traefik-694565b64f   -                  30m   [ControllerReference OwnerReference]
+kube-system   │                   │   │   └── Pod/svclb-traefik-rrpdf                       2/2     Running    30m   [ControllerReference OwnerReference]
+kube-system   │                   │   └── EndpointSlice/traefik-klkwg                       -                  30m   [ControllerReference OwnerReference]
+kube-system   │                   └── Service/traefik-prometheus                            -                  30m   [Service]
+kube-system   │                       └── EndpointSlice/traefik-prometheus-4ksf4            -                  30m   [ControllerReference OwnerReference]
+              ├── ClusterRoleBinding/traefik                                                -                  30m   [HelmRelease]
+kube-system   ├── ConfigMap/traefik                                                         -                  30m   [HelmRelease]
+kube-system   │   └── Pod/traefik-5dd496474-7mj6c                                           1/1     Running    30m   [PodVolume]
+kube-system   ├── ConfigMap/traefik-test                                                    -                  30m   [HelmRelease]
+kube-system   ├── Deployment/traefik                                                        1/1                30m   [HelmRelease]
+kube-system   │   └── ReplicaSet/traefik-5dd496474                                          1/1                30m   [ControllerReference OwnerReference]
+kube-system   │       └── Pod/traefik-5dd496474-7mj6c                                       1/1     Running    30m   [ControllerReference OwnerReference]
+kube-system   ├── Secret/sh.helm.release.v1.traefik.v1                                      -                  30m   [HelmStorage]
+kube-system   ├── Secret/traefik-default-cert                                               -                  30m   [HelmRelease]
+kube-system   │   └── Pod/traefik-5dd496474-7mj6c                                           1/1     Running    30m   [PodVolume]
+kube-system   ├── Service/traefik                                                           -                  30m   [HelmRelease]
+kube-system   ├── Service/traefik-prometheus                                                -                  30m   [HelmRelease]
+kube-system   └── ServiceAccount/traefik                                                    -                  30m   [HelmRelease]
 ```
 
 List of supported relationships used for discovering dependent objects:
