@@ -12,6 +12,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	unstructuredv1 "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/duration"
 	"k8s.io/client-go/util/jsonpath"
@@ -69,6 +70,32 @@ func createShowGroupFn(nodeMap graph.NodeMap, showGroup bool, maxDepth uint) fun
 	// it belongs to.
 	return func(kind string) bool {
 		return len(kindToGroupSetMap[kind]) > 1
+	}
+}
+
+// createShowNamespaceFn creates a function that takes in a resource's GroupKind
+// & determines whether the resource's namespace should be shown.
+func createShowNamespaceFn(nodeMap graph.NodeMap, showNamespace bool, maxDepth uint) func(schema.GroupKind) bool {
+	showNS := showNamespace || shouldShowNamespace(nodeMap, maxDepth)
+	if !showNS {
+		return func(_ schema.GroupKind) bool {
+			return false
+		}
+	}
+
+	clusterScopeGKSet := map[schema.GroupKind]struct{}{}
+	for _, node := range nodeMap {
+		if maxDepth != 0 && node.Depth > maxDepth {
+			continue
+		}
+		gk := node.GroupVersionKind().GroupKind()
+		if !node.Namespaced {
+			clusterScopeGKSet[gk] = struct{}{}
+		}
+	}
+	return func(gk schema.GroupKind) bool {
+		_, isClusterScopeGK := clusterScopeGKSet[gk]
+		return !isClusterScopeGK
 	}
 }
 

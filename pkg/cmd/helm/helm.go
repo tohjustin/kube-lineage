@@ -132,7 +132,7 @@ func (o *CmdOptions) Complete(cmd *cobra.Command, args []string) error {
 	}
 
 	// Setup printer
-	o.Printer, err = o.PrintFlags.ToPrinter()
+	o.Printer, err = o.PrintFlags.ToPrinter(o.Client)
 	if err != nil {
 		return err
 	}

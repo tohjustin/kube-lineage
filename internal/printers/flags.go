@@ -6,6 +6,8 @@ import (
 
 	"github.com/spf13/pflag"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
+
+	"github.com/tohjustin/kube-lineage/internal/client"
 )
 
 const (
@@ -59,7 +61,7 @@ func (f *Flags) SetShowNamespace(b bool) {
 }
 
 // ToPrinter returns a printer based on current flag values.
-func (f *Flags) ToPrinter() (Interface, error) {
+func (f *Flags) ToPrinter(client client.Interface) (Interface, error) {
 	outputFormat := ""
 	if f.OutputFormat != nil {
 		outputFormat = *f.OutputFormat
@@ -72,6 +74,7 @@ func (f *Flags) ToPrinter() (Interface, error) {
 		printer = &tablePrinter{
 			configFlags:  configFlags.HumanReadableFlags,
 			outputFormat: outputFormat,
+			client:       client,
 		}
 	default:
 		return nil, genericclioptions.NoCompatiblePrinterError{

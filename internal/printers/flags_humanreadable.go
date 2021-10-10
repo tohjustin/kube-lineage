@@ -2,6 +2,7 @@ package printers
 
 import (
 	"github.com/spf13/pflag"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/cli-runtime/pkg/printers"
@@ -20,6 +21,8 @@ const (
 const (
 	outputFormatDefault     = ""
 	outputFormatDefaultWide = "wide"
+	outputFormatSplit       = "split"
+	outputFormatSplitWide   = "split-wide"
 )
 
 // HumanPrintFlags provides default flags necessary for printing. Given the
@@ -49,6 +52,8 @@ func (f *HumanPrintFlags) AllowedFormats() []string {
 	return []string{
 		outputFormatDefault,
 		outputFormatDefaultWide,
+		outputFormatSplit,
+		outputFormatSplitWide,
 	}
 }
 
@@ -57,9 +62,21 @@ func (f *HumanPrintFlags) IsSupportedOutputFormat(outputFormat string) bool {
 	return sets.NewString(f.AllowedFormats()...).Has(outputFormat)
 }
 
+// IsSplitOutputFormat returns true if provided output format is a split table
+// format.
+func (f *HumanPrintFlags) IsSplitOutputFormat(outputFormat string) bool {
+	return outputFormat == outputFormatSplit || outputFormat == outputFormatSplitWide
+}
+
+// IsWideOutputFormat returns true if provided output format is a wide table
+// format.
+func (f *HumanPrintFlags) IsWideOutputFormat(outputFormat string) bool {
+	return outputFormat == outputFormatDefaultWide || outputFormat == outputFormatSplitWide
+}
+
 // ToPrinter receives an outputFormat and returns a printer capable of handling
 // human-readable output.
-func (f *HumanPrintFlags) ToPrinter(outputFormat string) (printers.ResourcePrinter, error) {
+func (f *HumanPrintFlags) ToPrinterWithGK(outputFormat string, gk schema.GroupKind) (printers.ResourcePrinter, error) {
 	if !f.IsSupportedOutputFormat(outputFormat) {
 		return nil, genericclioptions.NoCompatiblePrinterError{
 			Options:        f,
@@ -86,10 +103,18 @@ func (f *HumanPrintFlags) ToPrinter(outputFormat string) (printers.ResourcePrint
 		ColumnLabels:  columnLabels,
 		NoHeaders:     noHeaders,
 		ShowLabels:    showLabels,
-		Wide:          outputFormat == outputFormatDefaultWide,
+		Kind:          gk,
+		WithKind:      !gk.Empty(),
+		Wide:          f.IsWideOutputFormat(outputFormat),
 		WithNamespace: showNamespace,
 	})
 	return p, nil
+}
+
+// ToPrinter receives an outputFormat and returns a printer capable of handling
+// human-readable output.
+func (f *HumanPrintFlags) ToPrinter(outputFormat string) (printers.ResourcePrinter, error) {
+	return f.ToPrinterWithGK(outputFormat, schema.GroupKind{})
 }
 
 // AddFlags receives a *cobra.Command reference and binds flags related to
