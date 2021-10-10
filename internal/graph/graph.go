@@ -373,9 +373,6 @@ func ResolveDependents(objects []unstructuredv1.Unstructured, uids []types.UID) 
 				continue
 			}
 		// Populate dependents based on Event relationships
-		// TODO: It's possible to have events to be in a different namespace from the
-		//       its referenced object, so update the resource fetching logic to
-		//       always try to fetch events at the cluster scope for event resources
 		case (node.Group == "events.k8s.io" || node.Group == "") && node.Kind == "Event":
 			rmap, err = getEventRelationships(node)
 			if err != nil {
@@ -411,9 +408,6 @@ func ResolveDependents(objects []unstructuredv1.Unstructured, uids []types.UID) 
 				continue
 			}
 		// Populate dependents based on RoleBinding relationships
-		// TODO: It's possible to have rolebinding to reference clusterrole(s), so
-		//       update the resource fetching logic to always try to fetch
-		//       clusterroles
 		case node.Group == "rbac.authorization.k8s.io" && node.Kind == "RoleBinding":
 			rmap, err = getRoleBindingRelationships(node)
 			if err != nil {
