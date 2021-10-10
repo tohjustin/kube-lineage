@@ -15,7 +15,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
-	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
 )
 
@@ -47,38 +46,6 @@ type client struct {
 	discoveryClient discovery.DiscoveryInterface
 	dynamicClient   dynamic.Interface
 	mapper          meta.RESTMapper
-}
-
-func (f *Flags) ToClient() (Interface, error) {
-	config, err := f.ToRESTConfig()
-	if err != nil {
-		return nil, err
-	}
-	config.WarningHandler = rest.NoWarnings{}
-	config.QPS = clientQPS
-	config.Burst = clientBurst
-	f.WithDiscoveryBurst(clientBurst)
-
-	dyn, err := dynamic.NewForConfig(config)
-	if err != nil {
-		return nil, err
-	}
-	dis, err := f.ToDiscoveryClient()
-	if err != nil {
-		return nil, err
-	}
-	mapper, err := f.ToRESTMapper()
-	if err != nil {
-		return nil, err
-	}
-	cli := &client{
-		configFlags:     f,
-		discoveryClient: dis,
-		dynamicClient:   dyn,
-		mapper:          mapper,
-	}
-
-	return cli, nil
 }
 
 // IsReachable tests connectivity to the cluster.
