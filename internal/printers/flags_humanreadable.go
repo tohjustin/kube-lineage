@@ -39,10 +39,9 @@ func (f *HumanPrintFlags) EnsureWithGroup() {
 	f.ShowGroup = &showGroup
 }
 
-// EnsureWithNamespace sets the "ShowNamespace" human-readable option to true.
-func (f *HumanPrintFlags) EnsureWithNamespace() {
-	showNamespace := true
-	f.ShowNamespace = &showNamespace
+// SetShowNamespace sets the "ShowNamespace" human-readable option.
+func (f *HumanPrintFlags) SetShowNamespace(b bool) {
+	f.ShowNamespace = &b
 }
 
 // AllowedFormats returns more customized formating options.

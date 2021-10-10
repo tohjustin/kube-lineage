@@ -43,7 +43,7 @@ var (
 
 // createShowGroupFn creates a function that takes in a resource's kind &
 // determines whether the resource's group should be included in its name.
-func createShowGroupFn(nodeMap graph.NodeMap, showGroup bool) func(kind string) bool {
+func createShowGroupFn(nodeMap graph.NodeMap, showGroup bool, maxDepth uint) func(string) bool {
 	// Create function that returns true, if showGroup is true
 	if showGroup {
 		return func(_ string) bool {
@@ -54,6 +54,9 @@ func createShowGroupFn(nodeMap graph.NodeMap, showGroup bool) func(kind string) 
 	// Track every object kind in the node map & the groups that they belong to.
 	kindToGroupSetMap := map[string](map[string]struct{}){}
 	for _, node := range nodeMap {
+		if maxDepth != 0 && node.Depth > maxDepth {
+			continue
+		}
 		if _, ok := kindToGroupSetMap[node.Kind]; !ok {
 			kindToGroupSetMap[node.Kind] = map[string]struct{}{}
 		}
@@ -67,6 +70,22 @@ func createShowGroupFn(nodeMap graph.NodeMap, showGroup bool) func(kind string) 
 	return func(kind string) bool {
 		return len(kindToGroupSetMap[kind]) > 1
 	}
+}
+
+// shouldShowNamespace determines whether namespace column should be shown.
+// Returns true if objects in the provided node map are in different namespaces.
+func shouldShowNamespace(nodeMap graph.NodeMap, maxDepth uint) bool {
+	nsSet := map[string]struct{}{}
+	for _, node := range nodeMap {
+		if maxDepth != 0 && node.Depth > maxDepth {
+			continue
+		}
+		ns := node.Namespace
+		if _, ok := nsSet[ns]; !ok {
+			nsSet[ns] = struct{}{}
+		}
+	}
+	return len(nsSet) > 1
 }
 
 // newJSONPath returns a JSONPath object created from parsing the provided JSON
@@ -460,17 +479,6 @@ func nodeDependentsToTableRows(
 	}
 
 	return rows, nil
-}
-
-// shouldShowNamespace determines whether namespace column should be shown.
-// Returns true if objects in the provided node map are in different namespaces.
-func shouldShowNamespace(nodeMap graph.NodeMap, root *graph.Node) bool {
-	for _, node := range nodeMap {
-		if root.Namespace != node.Namespace {
-			return true
-		}
-	}
-	return false
 }
 
 // translateTimestampSince returns the elapsed time since timestamp in

@@ -47,15 +47,15 @@ func (f *Flags) EnsureWithGroup() {
 	f.HumanReadableFlags.EnsureWithGroup()
 }
 
-// EnsureWithNamespace ensures that human-readable flags return a printer
-// capable of printing with a "namespace" column.
-func (f *Flags) EnsureWithNamespace() {
-	f.HumanReadableFlags.EnsureWithNamespace()
-}
-
 // IsTableOutputFormat returns true if provided output format is a table format.
 func (f *Flags) IsTableOutputFormat(outputFormat string) bool {
 	return f.HumanReadableFlags.IsSupportedOutputFormat(outputFormat)
+}
+
+// SetShowNamespace configures whether human-readable flags return a printer
+// capable of printing with a "namespace" column.
+func (f *Flags) SetShowNamespace(b bool) {
+	f.HumanReadableFlags.SetShowNamespace(b)
 }
 
 // ToPrinter returns a printer based on current flag values.

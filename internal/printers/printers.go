@@ -10,7 +10,7 @@ import (
 )
 
 type Interface interface {
-	Print(w io.Writer, nodeMap graph.NodeMap, rootUID types.UID, depth uint) error
+	Print(w io.Writer, nodeMap graph.NodeMap, rootUID types.UID, maxDepth uint) error
 }
 
 type tablePrinter struct {
@@ -33,16 +33,14 @@ func (p *tablePrinter) printTable(w io.Writer, nodeMap graph.NodeMap, root *grap
 	if sg := p.configFlags.ShowGroup; sg != nil {
 		showGroup = *sg
 	}
-	showGroupFn := createShowGroupFn(nodeMap, showGroup)
+	showGroupFn := createShowGroupFn(nodeMap, showGroup, maxDepth)
 	t, err := nodeMapToTable(nodeMap, root, maxDepth, showGroupFn)
 	if err != nil {
 		return err
 	}
 
 	// Setup Table printer
-	if shouldShowNamespace(nodeMap, root) {
-		p.configFlags.EnsureWithNamespace()
-	}
+	p.configFlags.SetShowNamespace(shouldShowNamespace(nodeMap, maxDepth))
 	tableprinter, err := p.configFlags.ToPrinter(p.outputFormat)
 	if err != nil {
 		return err
