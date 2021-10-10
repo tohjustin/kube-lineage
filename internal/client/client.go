@@ -11,10 +11,14 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	unstructuredv1 "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	metav1beta1 "k8s.io/apimachinery/pkg/apis/meta/v1beta1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/cli-runtime/pkg/resource"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
 )
 
@@ -28,6 +32,12 @@ type GetOptions struct {
 	Namespace   string
 }
 
+type GetTableOptions struct {
+	APIResource APIResource
+	Namespace   string
+	Names       []string
+}
+
 type ListOptions struct {
 	APIResources []APIResource
 	Namespaces   []string
@@ -39,6 +49,7 @@ type Interface interface {
 	ResolveAPIResource(s string) (*APIResource, error)
 
 	Get(ctx context.Context, name string, opts GetOptions) (*unstructuredv1.Unstructured, error)
+	GetTable(ctx context.Context, opts GetTableOptions) (*metav1.Table, error)
 	List(ctx context.Context, opts ListOptions) (*unstructuredv1.UnstructuredList, error)
 }
 
@@ -116,6 +127,7 @@ func (c *client) ResolveAPIResource(s string) (*APIResource, error) {
 	return res, nil
 }
 
+// Get returns an object that matches the provided name & options on the server.
 func (c *client) Get(ctx context.Context, name string, opts GetOptions) (*unstructuredv1.Unstructured, error) {
 	klog.V(4).Infof("Get \"%s\" with options: %+v", name, opts)
 	gvr := opts.APIResource.GroupVersionResource()
@@ -128,6 +140,78 @@ func (c *client) Get(ctx context.Context, name string, opts GetOptions) (*unstru
 	return ri.Get(ctx, name, metav1.GetOptions{})
 }
 
+// GetTable returns a table output from the server which contains data of the
+// list of objects that matches the provided options. This is similar to an API
+// request made by `kubectl get TYPE NAME... [-n NAMESPACE]`.
+func (c *client) GetTable(ctx context.Context, opts GetTableOptions) (*metav1.Table, error) {
+	klog.V(4).Infof("GetTable with options: %+v", opts)
+	gk := opts.APIResource.GroupVersionKind().GroupKind()
+	r := resource.NewBuilder(c.configFlags).
+		Unstructured().
+		NamespaceParam(opts.Namespace).
+		ResourceNames(gk.String(), opts.Names...).
+		ContinueOnError().
+		Latest().
+		TransformRequests(func(req *rest.Request) {
+			req.SetHeader("Accept", strings.Join([]string{
+				fmt.Sprintf("application/json;as=Table;v=%s;g=%s", metav1.SchemeGroupVersion.Version, metav1.GroupName),
+				fmt.Sprintf("application/json;as=Table;v=%s;g=%s", metav1beta1.SchemeGroupVersion.Version, metav1beta1.GroupName),
+				"application/json",
+			}, ","))
+			req.Param("includeObject", string(metav1.IncludeMetadata))
+		}).
+		Do()
+	r.IgnoreErrors(apierrors.IsNotFound)
+	if err := r.Err(); err != nil {
+		return nil, err
+	}
+
+	infos, err := r.Infos()
+	if err != nil || infos == nil {
+		return nil, err
+	}
+	var table *metav1.Table
+	for ix := range infos {
+		t, err := decodeIntoTable(infos[ix].Object)
+		if err != nil {
+			return nil, err
+		}
+		if table == nil {
+			table = t
+			continue
+		}
+		table.Rows = append(table.Rows, t.Rows...)
+	}
+	return table, nil
+}
+
+func decodeIntoTable(obj runtime.Object) (*metav1.Table, error) {
+	u, ok := obj.(*unstructuredv1.Unstructured)
+	if !ok {
+		return nil, fmt.Errorf("attempt to decode non-Unstructured object")
+	}
+	table := &metav1.Table{}
+	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(u.Object, table); err != nil {
+		return nil, err
+	}
+
+	for i := range table.Rows {
+		row := &table.Rows[i]
+		if row.Object.Raw == nil || row.Object.Object != nil {
+			continue
+		}
+		converted, err := runtime.Decode(unstructuredv1.UnstructuredJSONScheme, row.Object.Raw)
+		if err != nil {
+			return nil, err
+		}
+		row.Object.Object = converted
+	}
+
+	return table, nil
+}
+
+// List returns a list of objects that matches the provided options on the
+// server.
 //nolint:funlen,gocognit
 func (c *client) List(ctx context.Context, opts ListOptions) (*unstructuredv1.UnstructuredList, error) {
 	klog.V(4).Infof("List with options: %+v", opts)
@@ -216,7 +300,7 @@ func (c *client) List(ctx context.Context, opts ListOptions) (*unstructuredv1.Un
 	return &unstructuredv1.UnstructuredList{Items: items}, nil
 }
 
-// getAPIResources returns all API resources that exists on the cluster.
+// getAPIResources returns all API resource registered on the server.
 func (c *client) getAPIResources(_ context.Context) ([]APIResource, error) {
 	rls, err := c.discoveryClient.ServerPreferredResources()
 	if err != nil {
