@@ -34,8 +34,10 @@ type ListOptions struct {
 }
 
 type Interface interface {
+	GetMapper() meta.RESTMapper
 	IsReachable() error
 	ResolveAPIResource(s string) (*APIResource, error)
+
 	Get(ctx context.Context, name string, opts GetOptions) (*unstructuredv1.Unstructured, error)
 	List(ctx context.Context, opts ListOptions) (*unstructuredv1.UnstructuredList, error)
 }
@@ -46,6 +48,10 @@ type client struct {
 	discoveryClient discovery.DiscoveryInterface
 	dynamicClient   dynamic.Interface
 	mapper          meta.RESTMapper
+}
+
+func (c *client) GetMapper() meta.RESTMapper {
+	return c.mapper
 }
 
 // IsReachable tests connectivity to the cluster.

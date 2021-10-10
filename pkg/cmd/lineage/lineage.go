@@ -209,8 +209,12 @@ func (o *CmdOptions) Run() error {
 	objs.Items = append(objs.Items, *root)
 
 	// Find all dependents of the root object
+	mapper := o.Client.GetMapper()
 	rootUID := root.GetUID()
-	nodeMap := graph.ResolveDependents(objs.Items, []types.UID{rootUID})
+	nodeMap, err := graph.ResolveDependents(mapper, objs.Items, []types.UID{rootUID})
+	if err != nil {
+		return err
+	}
 
 	// Print output
 	return o.Printer.Print(o.Out, nodeMap, rootUID, *o.Flags.Depth)

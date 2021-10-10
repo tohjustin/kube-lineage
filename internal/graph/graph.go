@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	unstructuredv1 "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
@@ -144,7 +145,10 @@ type Node struct {
 	*unstructuredv1.Unstructured
 	UID             types.UID
 	Group           string
+	Version         string
 	Kind            string
+	Resource        string
+	Namespaced      bool
 	Namespace       string
 	Name            string
 	OwnerReferences []metav1.OwnerReference
@@ -174,6 +178,18 @@ func (n *Node) GetNestedString(fields ...string) string {
 		return ""
 	}
 	return val
+}
+
+func (n *Node) GetAPIResource() metav1.APIResource {
+	// NOTE: This is a rather incomplete APIResource object, but it has enough
+	//       information inside for our use case, which is to fetch API objects
+	return metav1.APIResource{
+		Group:      n.Group,
+		Version:    n.Version,
+		Kind:       n.Kind,
+		Name:       n.Resource,
+		Namespaced: n.Namespaced,
+	}
 }
 
 // NodeList contains a list of nodes.
@@ -208,7 +224,7 @@ type NodeMap map[types.UID]*Node
 // ResolveDependents resolves all dependents of the provided objects and returns
 // a relationship tree.
 //nolint:funlen,gocognit,gocyclo
-func ResolveDependents(objects []unstructuredv1.Unstructured, uids []types.UID) NodeMap {
+func ResolveDependents(m meta.RESTMapper, objects []unstructuredv1.Unstructured, uids []types.UID) (NodeMap, error) {
 	// Create global node maps of all objects, one mapped by node UIDs & the other
 	// mapped by node keys. This step also helps deduplicate the list of provided
 	// objects
@@ -216,13 +232,22 @@ func ResolveDependents(objects []unstructuredv1.Unstructured, uids []types.UID) 
 	globalMapByKey := map[ObjectReferenceKey]*Node{}
 	for ix, o := range objects {
 		gvk := o.GroupVersionKind()
+		m, err := m.RESTMapping(gvk.GroupKind(), gvk.Version)
+		if err != nil {
+			klog.V(4).Infof("Failed to map resource \"%s\" to GVR", gvk)
+			return nil, err
+		}
+		ns := o.GetNamespace()
 		node := Node{
 			Unstructured:    &objects[ix],
 			UID:             o.GetUID(),
 			Name:            o.GetName(),
-			Namespace:       o.GetNamespace(),
-			Group:           gvk.Group,
-			Kind:            gvk.Kind,
+			Namespace:       ns,
+			Namespaced:      ns != "",
+			Group:           m.Resource.Group,
+			Version:         m.Resource.Version,
+			Kind:            m.GroupVersionKind.Kind,
+			Resource:        m.Resource.Resource,
 			OwnerReferences: o.GetOwnerReferences(),
 			Dependents:      map[types.UID]RelationshipSet{},
 		}
@@ -455,5 +480,5 @@ func ResolveDependents(objects []unstructuredv1.Unstructured, uids []types.UID) 
 	}
 
 	klog.V(4).Infof("Resolved %d dependents for %d objects", len(nodeMap)-1, len(uids))
-	return nodeMap
+	return nodeMap, nil
 }

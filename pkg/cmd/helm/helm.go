@@ -234,7 +234,11 @@ func (o *CmdOptions) Run() error {
 	}
 
 	// Find all dependents of the release & storage objects
-	nodeMap := graph.ResolveDependents(objs.Items, uids)
+	mapper := o.Client.GetMapper()
+	nodeMap, err := graph.ResolveDependents(mapper, objs.Items, uids)
+	if err != nil {
+		return err
+	}
 
 	// Add the Helm release object to the relationship tree
 	rootNode := newReleaseNode(rls)
