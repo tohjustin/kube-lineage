@@ -10,8 +10,9 @@ const (
 	flagColumnLabels          = "label-columns"
 	flagColumnLabelsShorthand = "L"
 	flagNoHeaders             = "no-headers"
-	flagShowLabels            = "show-labels"
 	flagShowGroup             = "show-group"
+	flagShowLabels            = "show-labels"
+	flagShowNamespace         = "show-namespace"
 )
 
 // HumanPrintFlags provides default flags necessary for printing. Given the
@@ -22,7 +23,7 @@ type HumanPrintFlags struct {
 	NoHeaders     *bool
 	ShowGroup     *bool
 	ShowLabels    *bool
-	WithNamespace bool
+	ShowNamespace *bool
 }
 
 // EnsureWithGroup sets the "ShowGroup" human-readable option to true.
@@ -32,9 +33,10 @@ func (f *HumanPrintFlags) EnsureWithGroup() error {
 	return nil
 }
 
-// EnsureWithNamespace sets the "WithNamespace" human-readable option to true.
+// EnsureWithNamespace sets the "ShowNamespace" human-readable option to true.
 func (f *HumanPrintFlags) EnsureWithNamespace() error {
-	f.WithNamespace = true
+	showNamespace := true
+	f.ShowNamespace = &showNamespace
 	return nil
 }
 
@@ -61,12 +63,16 @@ func (f *HumanPrintFlags) ToPrinter(outputFormat string) (printers.ResourcePrint
 	if f.ShowLabels != nil {
 		showLabels = *f.ShowLabels
 	}
+	showNamespace := false
+	if f.ShowLabels != nil {
+		showNamespace = *f.ShowNamespace
+	}
 	p := printers.NewTablePrinter(printers.PrintOptions{
+		ColumnLabels:  columnLabels,
 		NoHeaders:     noHeaders,
 		ShowLabels:    showLabels,
 		Wide:          outputFormat == "wide",
-		ColumnLabels:  columnLabels,
-		WithNamespace: f.WithNamespace,
+		WithNamespace: showNamespace,
 	})
 	return p, nil
 }
@@ -80,11 +86,14 @@ func (f *HumanPrintFlags) AddFlags(flags *pflag.FlagSet) {
 	if f.NoHeaders != nil {
 		flags.BoolVar(f.NoHeaders, flagNoHeaders, *f.NoHeaders, "When using the default output format, don't print headers (default print headers)")
 	}
+	if f.ShowGroup != nil {
+		flags.BoolVar(f.ShowGroup, flagShowGroup, *f.ShowGroup, "If present, include the resource group for the requested object(s)")
+	}
 	if f.ShowLabels != nil {
 		flags.BoolVar(f.ShowLabels, flagShowLabels, *f.ShowLabels, "When printing, show all labels as the last column (default hide labels column)")
 	}
-	if f.ShowGroup != nil {
-		flags.BoolVar(f.ShowGroup, flagShowGroup, *f.ShowGroup, "If present, include the resource group for the requested object(s)")
+	if f.ShowNamespace != nil {
+		flags.BoolVar(f.ShowNamespace, flagShowNamespace, *f.ShowNamespace, "When printing, show namespace as the first column (default hide namespace column if all objects are in the same namespace)")
 	}
 }
 
@@ -95,12 +104,13 @@ func NewHumanPrintFlags() *HumanPrintFlags {
 	noHeaders := false
 	showGroup := false
 	showLabels := false
+	showNamespace := false
 
 	return &HumanPrintFlags{
 		ColumnLabels:  &columnLabels,
 		NoHeaders:     &noHeaders,
 		ShowGroup:     &showGroup,
 		ShowLabels:    &showLabels,
-		WithNamespace: false,
+		ShowNamespace: &showNamespace,
 	}
 }

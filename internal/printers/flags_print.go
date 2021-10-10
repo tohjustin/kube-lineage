@@ -33,19 +33,19 @@ func (f *Flags) Copy() Flags {
 }
 
 // EnsureWithGroup ensures that human-readable flags return a printer capable of
-// including resource kinds.
+// including resource group.
 func (f *Flags) EnsureWithGroup() error {
 	return f.HumanReadableFlags.EnsureWithGroup()
 }
 
-// EnsureWithNamespace ensures that human-readable flags return a printer capable
-// of printing with a "namespace" column.
+// EnsureWithNamespace ensures that human-readable flags return a printer
+// capable of printing with a "namespace" column.
 func (f *Flags) EnsureWithNamespace() error {
 	return f.HumanReadableFlags.EnsureWithNamespace()
 }
 
-// ToPrinter attempts to find a composed set of Flags suitable for
-// returning a printer based on current flag values.
+// ToPrinter attempts to find a composed set of Flags suitable for returning a
+// printer based on current flag values.
 func (f *Flags) ToPrinter() (printers.ResourcePrinter, error) {
 	outputFormat := ""
 	if f.OutputFormat != nil {

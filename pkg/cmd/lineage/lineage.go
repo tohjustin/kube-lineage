@@ -53,7 +53,7 @@ type CmdOptions struct {
 
 	ClientFlags *client.Flags
 	PrintFlags  *lineageprinters.Flags
-	ToPrinter   func(withGroup bool, withNamespace bool) (printers.ResourcePrinterFunc, error)
+	ToPrinter   func(withNS bool, withGroup bool) (printers.ResourcePrinterFunc, error)
 
 	genericclioptions.IOStreams
 }
@@ -128,15 +128,15 @@ func (o *CmdOptions) Complete(cmd *cobra.Command, args []string) error {
 	}
 
 	// Setup printer
-	o.ToPrinter = func(withGroup bool, withNamespace bool) (printers.ResourcePrinterFunc, error) {
+	o.ToPrinter = func(withNS bool, withGroup bool) (printers.ResourcePrinterFunc, error) {
 		printFlags := o.PrintFlags.Copy()
-		if withGroup {
-			if err := printFlags.EnsureWithGroup(); err != nil {
+		if withNS {
+			if err := printFlags.EnsureWithNamespace(); err != nil {
 				return nil, err
 			}
 		}
-		if withNamespace {
-			if err := printFlags.EnsureWithNamespace(); err != nil {
+		if withGroup {
+			if err := printFlags.EnsureWithGroup(); err != nil {
 				return nil, err
 			}
 		}
@@ -173,6 +173,7 @@ func (o *CmdOptions) Validate() error {
 	klog.V(4).Infof("PrintFlags.NoHeaders: %t", *o.PrintFlags.HumanReadableFlags.NoHeaders)
 	klog.V(4).Infof("PrintFlags.ShowGroup: %t", *o.PrintFlags.HumanReadableFlags.ShowGroup)
 	klog.V(4).Infof("PrintFlags.ShowLabels: %t", *o.PrintFlags.HumanReadableFlags.ShowLabels)
+	klog.V(4).Infof("PrintFlags.ShowNamespace: %t", *o.PrintFlags.HumanReadableFlags.ShowNamespace)
 
 	return nil
 }
@@ -243,19 +244,19 @@ func (o *CmdOptions) printObj(nodeMap graph.NodeMap, rootUID types.UID) error {
 		withGroup = *o.PrintFlags.HumanReadableFlags.ShowGroup
 	}
 	// Display namespace column only if objects are in different namespaces
-	withNamespace := false
+	withNS := false
 	for _, node := range nodeMap {
 		if root.Namespace != node.Namespace {
-			withNamespace = true
+			withNS = true
 			break
 		}
 	}
-	printer, err := o.ToPrinter(withGroup, withNamespace)
+	printer, err := o.ToPrinter(withNS, withGroup)
 	if err != nil {
 		return err
 	}
 
-	// Generate Table Rows for printing
+	// Generate Table to print
 	table, err := lineageprinters.PrintNode(nodeMap, root, *o.Flags.Depth, withGroup)
 	if err != nil {
 		return err
