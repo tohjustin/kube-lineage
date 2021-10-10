@@ -41,6 +41,34 @@ var (
 	objectReadyStatusJSONPath = newJSONPath("status", "{.status.conditions[?(@.type==\"Ready\")].status}")
 )
 
+// createShowGroupFn creates a function that takes in a resource's kind &
+// determines whether the resource's group should be included in its name.
+func createShowGroupFn(nodeMap graph.NodeMap, showGroup bool) func(kind string) bool {
+	// Create function that returns true, if showGroup is true
+	if showGroup {
+		return func(_ string) bool {
+			return true
+		}
+	}
+
+	// Track every object kind in the node map & the groups that they belong to.
+	kindToGroupSetMap := map[string](map[string]struct{}){}
+	for _, node := range nodeMap {
+		if _, ok := kindToGroupSetMap[node.Kind]; !ok {
+			kindToGroupSetMap[node.Kind] = map[string]struct{}{}
+		}
+		kindToGroupSetMap[node.Kind][node.Group] = struct{}{}
+	}
+	// When printing an object & if there exists another object in the node map
+	// that has the same kind but belongs to a different group (eg. "services.v1"
+	// vs "services.v1.serving.knative.dev"), we prepend the object's name with
+	// its GroupKind instead of its Kind to clearly indicate which resource type
+	// it belongs to.
+	return func(kind string) bool {
+		return len(kindToGroupSetMap[kind]) > 1
+	}
+}
+
 // newJSONPath returns a JSONPath object created from parsing the provided JSON
 // path expression.
 func newJSONPath(name, jsonPath string) *jsonpath.JSONPath {
@@ -344,24 +372,12 @@ func nodeToTableRow(node *graph.Node, rset graph.RelationshipSet, namePrefix str
 	}
 }
 
-// PrintNode converts the provided node & its dependents into table rows.
-func PrintNode(nodeMap graph.NodeMap, root *graph.Node, maxDepth uint, withGroup bool) (*metav1.Table, error) {
-	// Track every object kind in the node map & the groups that they belong to.
-	kindToGroupSetMap := map[string](map[string]struct{}){}
-	for _, node := range nodeMap {
-		if _, ok := kindToGroupSetMap[node.Kind]; !ok {
-			kindToGroupSetMap[node.Kind] = map[string]struct{}{}
-		}
-		kindToGroupSetMap[node.Kind][node.Group] = struct{}{}
-	}
-	// When printing an object & if there exists another object in the node map
-	// that has the same kind but belongs to a different group (eg. "services.v1"
-	// vs "services.v1.serving.knative.dev"), we prepend the object's name with
-	// its GroupKind instead of its Kind to clearly indicate which resource type
-	// it belongs to.
-	showGroupFn := func(kind string) bool {
-		return len(kindToGroupSetMap[kind]) > 1 || withGroup
-	}
+// nodeMapToTable converts the provided node & its dependents into table rows.
+func nodeMapToTable(
+	nodeMap graph.NodeMap,
+	root *graph.Node,
+	maxDepth uint,
+	showGroupFn func(kind string) bool) (*metav1.Table, error) {
 	// Sorts the list of UIDs based on the underlying object in following order:
 	// Namespace, Kind, Group, Name
 	sortDependentsFn := func(d map[types.UID]graph.RelationshipSet) []types.UID {
@@ -381,7 +397,7 @@ func PrintNode(nodeMap graph.NodeMap, root *graph.Node, maxDepth uint, withGroup
 	var rows []metav1.TableRow
 	row := nodeToTableRow(root, nil, "", showGroupFn)
 	uidSet := map[types.UID]struct{}{}
-	dependentRows, err := printNodeDependents(nodeMap, uidSet, root, "", 1, maxDepth, sortDependentsFn, showGroupFn)
+	dependentRows, err := nodeDependentsToTableRows(nodeMap, uidSet, root, "", 1, maxDepth, sortDependentsFn, showGroupFn)
 	if err != nil {
 		return nil, err
 	}
@@ -395,9 +411,9 @@ func PrintNode(nodeMap graph.NodeMap, root *graph.Node, maxDepth uint, withGroup
 	return &table, nil
 }
 
-// printNodeDependents converts the dependents of the provided node into table
-// rows.
-func printNodeDependents(
+// nodeDependentsToTableRows converts the dependents of the provided node into
+// table rows.
+func nodeDependentsToTableRows(
 	nodeMap graph.NodeMap,
 	uidSet map[types.UID]struct{},
 	node *graph.Node,
@@ -435,7 +451,7 @@ func printNodeDependents(
 		row := nodeToTableRow(child, rset, childPrefix, showGroupFn)
 		rows = append(rows, row)
 		if maxDepth == 0 || depth < maxDepth {
-			dependentRows, err := printNodeDependents(nodeMap, uidSet, child, dependentPrefix, depth+1, maxDepth, sortDependentsFn, showGroupFn)
+			dependentRows, err := nodeDependentsToTableRows(nodeMap, uidSet, child, dependentPrefix, depth+1, maxDepth, sortDependentsFn, showGroupFn)
 			if err != nil {
 				return nil, err
 			}
@@ -444,6 +460,17 @@ func printNodeDependents(
 	}
 
 	return rows, nil
+}
+
+// shouldShowNamespace determines whether namespace column should be shown.
+// Returns true if objects in the provided node map are in different namespaces.
+func shouldShowNamespace(nodeMap graph.NodeMap, root *graph.Node) bool {
+	for _, node := range nodeMap {
+		if root.Namespace != node.Namespace {
+			return true
+		}
+	}
+	return false
 }
 
 // translateTimestampSince returns the elapsed time since timestamp in

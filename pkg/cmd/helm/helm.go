@@ -15,7 +15,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
-	"k8s.io/cli-runtime/pkg/printers"
 	"k8s.io/cli-runtime/pkg/resource"
 	"k8s.io/klog/v2"
 	cmdutil "k8s.io/kubectl/pkg/cmd/util"
@@ -51,16 +50,16 @@ var (
 type CmdOptions struct {
 	// RequestRelease represents the requested Helm release.
 	RequestRelease string
+	Flags          *Flags
 
+	Namespace    string
 	HelmDriver   string
 	ActionConfig *action.Configuration
-	Flags        *Flags
 	Client       client.Interface
-	Namespace    string
+	ClientFlags  *client.Flags
 
-	ClientFlags *client.Flags
-	PrintFlags  *lineageprinters.Flags
-	ToPrinter   func(withNS bool, withGroup bool) (printers.ResourcePrinterFunc, error)
+	Printer    lineageprinters.Interface
+	PrintFlags *lineageprinters.Flags
 
 	genericclioptions.IOStreams
 }
@@ -133,24 +132,9 @@ func (o *CmdOptions) Complete(cmd *cobra.Command, args []string) error {
 	}
 
 	// Setup printer
-	o.ToPrinter = func(withNS bool, withGroup bool) (printers.ResourcePrinterFunc, error) {
-		printFlags := o.PrintFlags.Copy()
-		if withNS {
-			if err := printFlags.EnsureWithNamespace(); err != nil {
-				return nil, err
-			}
-		}
-		if withGroup {
-			if err := printFlags.EnsureWithGroup(); err != nil {
-				return nil, err
-			}
-		}
-		printer, err := printFlags.ToPrinter()
-		if err != nil {
-			return nil, err
-		}
-
-		return printer.PrintObj, nil
+	o.Printer, err = o.PrintFlags.ToPrinter()
+	if err != nil {
+		return err
 	}
 
 	return nil
@@ -264,7 +248,7 @@ func (o *CmdOptions) Run() error {
 	nodeMap[rootUID] = rootNode
 
 	// Print output
-	return o.printObj(nodeMap, rootUID)
+	return o.Printer.Print(o.Out, nodeMap, rootUID, *o.Flags.Depth)
 }
 
 // getManifestObjects fetches all objects found in the manifest of the provided
@@ -316,40 +300,6 @@ func (o *CmdOptions) getStorageObject(ctx context.Context, rls *release.Release)
 		APIResource: api,
 		Namespace:   o.Namespace,
 	})
-}
-
-// printObj prints the root object & its dependents in table format.
-func (o *CmdOptions) printObj(nodeMap graph.NodeMap, rootUID types.UID) error {
-	root, ok := nodeMap[rootUID]
-	if !ok {
-		return fmt.Errorf("requested object (uid: %s) not found in list of fetched objects", rootUID)
-	}
-
-	// Setup Table Printer
-	withGroup := false
-	if o.PrintFlags.HumanReadableFlags.ShowGroup != nil {
-		withGroup = *o.PrintFlags.HumanReadableFlags.ShowGroup
-	}
-	// Display namespace column only if objects are in different namespaces
-	withNS := false
-	for _, node := range nodeMap {
-		if root.Namespace != node.Namespace {
-			withNS = true
-			break
-		}
-	}
-	printer, err := o.ToPrinter(withNS, withGroup)
-	if err != nil {
-		return err
-	}
-
-	// Generate Table to print
-	table, err := lineageprinters.PrintNode(nodeMap, root, *o.Flags.Depth, withGroup)
-	if err != nil {
-		return err
-	}
-
-	return printer.PrintObj(table, o.Out)
 }
 
 // getReleaseReadyStatus returns the ready & status value of a Helm release

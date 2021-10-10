@@ -2,6 +2,7 @@ package printers
 
 import (
 	"github.com/spf13/pflag"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/cli-runtime/pkg/printers"
 )
@@ -13,6 +14,12 @@ const (
 	flagShowGroup             = "show-group"
 	flagShowLabels            = "show-labels"
 	flagShowNamespace         = "show-namespace"
+)
+
+// List of supported table output formats.
+const (
+	outputFormatDefault     = ""
+	outputFormatDefaultWide = "wide"
 )
 
 // HumanPrintFlags provides default flags necessary for printing. Given the
@@ -27,29 +34,38 @@ type HumanPrintFlags struct {
 }
 
 // EnsureWithGroup sets the "ShowGroup" human-readable option to true.
-func (f *HumanPrintFlags) EnsureWithGroup() error {
+func (f *HumanPrintFlags) EnsureWithGroup() {
 	showGroup := true
 	f.ShowGroup = &showGroup
-	return nil
 }
 
 // EnsureWithNamespace sets the "ShowNamespace" human-readable option to true.
-func (f *HumanPrintFlags) EnsureWithNamespace() error {
+func (f *HumanPrintFlags) EnsureWithNamespace() {
 	showNamespace := true
 	f.ShowNamespace = &showNamespace
-	return nil
 }
 
 // AllowedFormats returns more customized formating options.
 func (f *HumanPrintFlags) AllowedFormats() []string {
-	return []string{"wide"}
+	return []string{
+		outputFormatDefault,
+		outputFormatDefaultWide,
+	}
+}
+
+// IsSupportedOutputFormat returns true if provided output format is supported.
+func (f *HumanPrintFlags) IsSupportedOutputFormat(outputFormat string) bool {
+	return sets.NewString(f.AllowedFormats()...).Has(outputFormat)
 }
 
 // ToPrinter receives an outputFormat and returns a printer capable of handling
 // human-readable output.
 func (f *HumanPrintFlags) ToPrinter(outputFormat string) (printers.ResourcePrinter, error) {
-	if len(outputFormat) > 0 && outputFormat != "wide" {
-		return nil, genericclioptions.NoCompatiblePrinterError{Options: f, AllowedFormats: f.AllowedFormats()}
+	if !f.IsSupportedOutputFormat(outputFormat) {
+		return nil, genericclioptions.NoCompatiblePrinterError{
+			Options:        f,
+			AllowedFormats: f.AllowedFormats(),
+		}
 	}
 	columnLabels := []string{}
 	if f.ColumnLabels != nil {
@@ -71,7 +87,7 @@ func (f *HumanPrintFlags) ToPrinter(outputFormat string) (printers.ResourcePrint
 		ColumnLabels:  columnLabels,
 		NoHeaders:     noHeaders,
 		ShowLabels:    showLabels,
-		Wide:          outputFormat == "wide",
+		Wide:          outputFormat == outputFormatDefaultWide,
 		WithNamespace: showNamespace,
 	})
 	return p, nil

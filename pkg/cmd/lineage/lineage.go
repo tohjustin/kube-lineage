@@ -8,7 +8,6 @@ import (
 	"github.com/spf13/cobra"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
-	"k8s.io/cli-runtime/pkg/printers"
 	"k8s.io/klog/v2"
 	cmdutil "k8s.io/kubectl/pkg/cmd/util"
 	"k8s.io/kubectl/pkg/util/templates"
@@ -46,14 +45,14 @@ type CmdOptions struct {
 	RequestType string
 	// RequestName represents the name of the requested object.
 	RequestName string
+	Flags       *Flags
 
-	Flags     *Flags
-	Client    client.Interface
-	Namespace string
-
+	Namespace   string
+	Client      client.Interface
 	ClientFlags *client.Flags
-	PrintFlags  *lineageprinters.Flags
-	ToPrinter   func(withNS bool, withGroup bool) (printers.ResourcePrinterFunc, error)
+
+	Printer    lineageprinters.Interface
+	PrintFlags *lineageprinters.Flags
 
 	genericclioptions.IOStreams
 }
@@ -128,24 +127,9 @@ func (o *CmdOptions) Complete(cmd *cobra.Command, args []string) error {
 	}
 
 	// Setup printer
-	o.ToPrinter = func(withNS bool, withGroup bool) (printers.ResourcePrinterFunc, error) {
-		printFlags := o.PrintFlags.Copy()
-		if withNS {
-			if err := printFlags.EnsureWithNamespace(); err != nil {
-				return nil, err
-			}
-		}
-		if withGroup {
-			if err := printFlags.EnsureWithGroup(); err != nil {
-				return nil, err
-			}
-		}
-		printer, err := printFlags.ToPrinter()
-		if err != nil {
-			return nil, err
-		}
-
-		return printer.PrintObj, nil
+	o.Printer, err = o.PrintFlags.ToPrinter()
+	if err != nil {
+		return err
 	}
 
 	return nil
@@ -225,42 +209,9 @@ func (o *CmdOptions) Run() error {
 	objs.Items = append(objs.Items, *root)
 
 	// Find all dependents of the root object
-	nodeMap := graph.ResolveDependents(objs.Items, []types.UID{root.GetUID()})
+	rootUID := root.GetUID()
+	nodeMap := graph.ResolveDependents(objs.Items, []types.UID{rootUID})
 
 	// Print output
-	return o.printObj(nodeMap, root.GetUID())
-}
-
-// printObj prints the root object & its dependents in table format.
-func (o *CmdOptions) printObj(nodeMap graph.NodeMap, rootUID types.UID) error {
-	root, ok := nodeMap[rootUID]
-	if !ok {
-		return fmt.Errorf("requested object (uid: %s) not found in list of fetched objects", rootUID)
-	}
-
-	// Setup Table Printer
-	withGroup := false
-	if o.PrintFlags.HumanReadableFlags.ShowGroup != nil {
-		withGroup = *o.PrintFlags.HumanReadableFlags.ShowGroup
-	}
-	// Display namespace column only if objects are in different namespaces
-	withNS := false
-	for _, node := range nodeMap {
-		if root.Namespace != node.Namespace {
-			withNS = true
-			break
-		}
-	}
-	printer, err := o.ToPrinter(withNS, withGroup)
-	if err != nil {
-		return err
-	}
-
-	// Generate Table to print
-	table, err := lineageprinters.PrintNode(nodeMap, root, *o.Flags.Depth, withGroup)
-	if err != nil {
-		return err
-	}
-
-	return printer.PrintObj(table, o.Out)
+	return o.Printer.Print(o.Out, nodeMap, rootUID, *o.Flags.Depth)
 }
