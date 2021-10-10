@@ -11,7 +11,8 @@ import (
 )
 
 const (
-	flagOutputFormat = "output"
+	flagOutputFormat          = "output"
+	flagOutputFormatShorthand = "o"
 )
 
 // Flags composes common printer flag structs used in the command.
@@ -26,7 +27,7 @@ func (f *Flags) AddFlags(flags *pflag.FlagSet) {
 	f.HumanReadableFlags.AddFlags(flags)
 
 	if f.OutputFormat != nil {
-		flags.StringVarP(f.OutputFormat, flagOutputFormat, "o", *f.OutputFormat, fmt.Sprintf("Output format. One of: %s.", strings.Join(f.AllowedFormats(), "|")))
+		flags.StringVarP(f.OutputFormat, flagOutputFormat, flagOutputFormatShorthand, *f.OutputFormat, fmt.Sprintf("Output format. One of: %s.", strings.Join(f.AllowedFormats(), "|")))
 	}
 }
 
@@ -69,7 +70,7 @@ func (f *Flags) ToPrinter(client client.Interface) (Interface, error) {
 
 	var printer Interface
 	switch {
-	case f.IsTableOutputFormat(outputFormat):
+	case f.IsTableOutputFormat(outputFormat), outputFormat == "":
 		configFlags := f.Copy()
 		printer = &tablePrinter{
 			configFlags:  configFlags.HumanReadableFlags,

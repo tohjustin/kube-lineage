@@ -19,10 +19,9 @@ const (
 
 // List of supported table output formats.
 const (
-	outputFormatDefault     = ""
-	outputFormatDefaultWide = "wide"
-	outputFormatSplit       = "split"
-	outputFormatSplitWide   = "split-wide"
+	outputFormatWide      = "wide"
+	outputFormatSplit     = "split"
+	outputFormatSplitWide = "split-wide"
 )
 
 // HumanPrintFlags provides default flags necessary for printing. Given the
@@ -50,8 +49,7 @@ func (f *HumanPrintFlags) SetShowNamespace(b bool) {
 // AllowedFormats returns more customized formating options.
 func (f *HumanPrintFlags) AllowedFormats() []string {
 	return []string{
-		outputFormatDefault,
-		outputFormatDefaultWide,
+		outputFormatWide,
 		outputFormatSplit,
 		outputFormatSplitWide,
 	}
@@ -71,13 +69,13 @@ func (f *HumanPrintFlags) IsSplitOutputFormat(outputFormat string) bool {
 // IsWideOutputFormat returns true if provided output format is a wide table
 // format.
 func (f *HumanPrintFlags) IsWideOutputFormat(outputFormat string) bool {
-	return outputFormat == outputFormatDefaultWide || outputFormat == outputFormatSplitWide
+	return outputFormat == outputFormatWide || outputFormat == outputFormatSplitWide
 }
 
 // ToPrinter receives an outputFormat and returns a printer capable of handling
 // human-readable output.
 func (f *HumanPrintFlags) ToPrinterWithGK(outputFormat string, gk schema.GroupKind) (printers.ResourcePrinter, error) {
-	if !f.IsSupportedOutputFormat(outputFormat) {
+	if len(outputFormat) > 0 && !f.IsSupportedOutputFormat(outputFormat) {
 		return nil, genericclioptions.NoCompatiblePrinterError{
 			Options:        f,
 			AllowedFormats: f.AllowedFormats(),
