@@ -153,6 +153,7 @@ type Node struct {
 	Name            string
 	OwnerReferences []metav1.OwnerReference
 	Dependents      map[types.UID]RelationshipSet
+	Depth           uint
 }
 
 func (n *Node) AddDependent(uid types.UID, r Relationship) {
@@ -225,6 +226,9 @@ type NodeMap map[types.UID]*Node
 // a relationship tree.
 //nolint:funlen,gocognit,gocyclo
 func ResolveDependents(m meta.RESTMapper, objects []unstructuredv1.Unstructured, uids []types.UID) (NodeMap, error) {
+	if len(uids) == 0 {
+		return NodeMap{}, nil
+	}
 	// Create global node maps of all objects, one mapped by node UIDs & the other
 	// mapped by node keys. This step also helps deduplicate the list of provided
 	// objects
@@ -447,6 +451,7 @@ func ResolveDependents(m meta.RESTMapper, objects []unstructuredv1.Unstructured,
 
 	// Create submap containing the provided objects & their dependents from the
 	// global map
+	var depth uint
 	nodeMap, uidQueue, uidSet := NodeMap{}, []types.UID{}, map[types.UID]struct{}{}
 	for _, uid := range uids {
 		if node := globalMapByUID[uid]; node != nil {
@@ -454,11 +459,16 @@ func ResolveDependents(m meta.RESTMapper, objects []unstructuredv1.Unstructured,
 			uidQueue = append(uidQueue, uid)
 		}
 	}
+	depth, uidQueue = 0, append(uidQueue, "")
 	for {
-		if len(uidQueue) == 0 {
+		if len(uidQueue) <= 1 {
 			break
 		}
 		uid := uidQueue[0]
+		if uid == "" {
+			depth, uidQueue = depth+1, append(uidQueue[1:], "")
+			continue
+		}
 
 		// Guard against possible cyclic dependency
 		if _, ok := uidSet[uid]; ok {
@@ -469,6 +479,12 @@ func ResolveDependents(m meta.RESTMapper, objects []unstructuredv1.Unstructured,
 		}
 
 		if node := nodeMap[uid]; node != nil {
+			// Allow nodes to keep the smallest depth. For example, if a node has a
+			// depth of 1 & 7 in the relationship tree, we keep 1 so that when
+			// printing the tree with a depth of 2, the node will still be printed
+			if node.Depth == 0 || depth < node.Depth {
+				node.Depth = depth
+			}
 			dependents, ix := make([]types.UID, len(node.Dependents)), 0
 			for dUID := range node.Dependents {
 				nodeMap[dUID] = globalMapByUID[dUID]

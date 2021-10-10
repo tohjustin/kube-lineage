@@ -240,13 +240,16 @@ func (o *CmdOptions) Run() error {
 		return err
 	}
 
-	// Add the Helm release object to the relationship tree
+	// Add the Helm release object to the root of the relationship tree
 	rootNode := newReleaseNode(rls)
 	for _, obj := range rlsObjs {
 		rootNode.AddDependent(obj.GetUID(), graph.RelationshipHelmRelease)
 	}
 	if stgObj != nil {
 		rootNode.AddDependent(stgObj.GetUID(), graph.RelationshipHelmStorage)
+	}
+	for _, node := range nodeMap {
+		node.Depth++
 	}
 	rootUID := rootNode.GetUID()
 	nodeMap[rootUID] = rootNode
