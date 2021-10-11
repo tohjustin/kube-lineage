@@ -6,6 +6,7 @@ import (
 	extensionsv1beta1 "k8s.io/api/extensions/v1beta1"
 	networkingv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -19,6 +20,9 @@ const (
 	RelationshipClusterRoleBindingRole     Relationship = "ClusterRoleBindingRole"
 	RelationshipRoleBindingSubject         Relationship = "RoleBindingSubject"
 	RelationshipRoleBindingRole            Relationship = "RoleBindingRole"
+
+	// Kubernetes CSINode relationships.
+	RelationshipCSINodeDriver Relationship = "CSINodeDriver"
 
 	// Kubernetes Event relationships.
 	RelationshipEventRegarding Relationship = "EventRegarding"
@@ -110,6 +114,27 @@ func getClusterRoleBindingRelationships(n *Node) (*RelationshipMap, error) {
 	r := crb.RoleRef
 	ref = ObjectReference{Group: r.APIGroup, Kind: r.Kind, Name: r.Name}
 	result.AddDependencyByKey(ref.Key(), RelationshipClusterRoleBindingRole)
+
+	return &result, nil
+}
+
+// getCSINodeRelationships returns a map of relationships that this CSINode has
+// with other objects, based on what was referenced in its manifest.
+func getCSINodeRelationships(n *Node) (*RelationshipMap, error) {
+	var csin storagev1.CSINode
+	err := runtime.DefaultUnstructuredConverter.FromUnstructured(n.UnstructuredContent(), &csin)
+	if err != nil {
+		return nil, err
+	}
+
+	var ref ObjectReference
+	result := newRelationshipMap()
+
+	// RelationshipCSINodeDriver
+	for _, d := range csin.Spec.Drivers {
+		ref = ObjectReference{Group: "storage.k8s.io", Kind: "CSIDriver", Name: d.Name}
+		result.AddDependentByKey(ref.Key(), RelationshipCSINodeDriver)
+	}
 
 	return &result, nil
 }

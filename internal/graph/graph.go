@@ -443,6 +443,13 @@ func ResolveDependents(m meta.RESTMapper, objects []unstructuredv1.Unstructured,
 				klog.V(4).Infof("Failed to get relationships for rolebinding named \"%s\" in namespace \"%s\": %s: %s", node.Name, node.Namespace, err)
 				continue
 			}
+		// Populate dependents based on CSINode relationships
+		case node.Group == "storage.k8s.io" && node.Kind == "CSINode":
+			rmap, err = getCSINodeRelationships(node)
+			if err != nil {
+				klog.V(4).Infof("Failed to get relationships for csinode named \"%s\": %s: %s", node.Name, err)
+				continue
+			}
 		default:
 			continue
 		}
