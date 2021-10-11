@@ -1,6 +1,8 @@
 package graph
 
 import (
+	"strings"
+
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
 	extensionsv1beta1 "k8s.io/api/extensions/v1beta1"
@@ -60,6 +62,9 @@ const (
 	// Kubernetes ServiceAccount relationships.
 	RelationshipServiceAccountSecret          Relationship = "ServiceAccountSecret"
 	RelationshipServiceAccountImagePullSecret Relationship = "ServiceAccountImagePullSecret"
+
+	// Kubernetes StorageClass relationships.
+	RelationshipStorageClassProvisioner Relationship = "StorageClassProvisioner"
 )
 
 // getClusterRoleRelationships returns a map of relationships that this
@@ -544,6 +549,28 @@ func getServiceAccountRelationships(n *Node) (*RelationshipMap, error) {
 	for _, s := range sa.Secrets {
 		ref = ObjectReference{Kind: "Secret", Name: s.Name, Namespace: ns}
 		result.AddDependentByKey(ref.Key(), RelationshipServiceAccountSecret)
+	}
+
+	return &result, nil
+}
+
+// getStorageClassRelationships returns a map of relationships that this
+// StorageClass has with other objects, based on what was referenced in its
+// manifest.
+func getStorageClassRelationships(n *Node) (*RelationshipMap, error) {
+	var sc storagev1.StorageClass
+	err := runtime.DefaultUnstructuredConverter.FromUnstructured(n.UnstructuredContent(), &sc)
+	if err != nil {
+		return nil, err
+	}
+
+	var ref ObjectReference
+	result := newRelationshipMap()
+
+	// RelationshipStorageClassProvisioner (external provisioners only)
+	if p := sc.Provisioner; len(p) > 0 && !strings.HasPrefix(p, "kubernetes.io/") {
+		ref = ObjectReference{Group: "storage.k8s.io", Kind: "CSIDriver", Name: p}
+		result.AddDependencyByKey(ref.Key(), RelationshipStorageClassProvisioner)
 	}
 
 	return &result, nil
