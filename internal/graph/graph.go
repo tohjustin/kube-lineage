@@ -440,7 +440,7 @@ func ResolveDependents(m meta.RESTMapper, objects []unstructuredv1.Unstructured,
 		case node.Group == "rbac.authorization.k8s.io" && node.Kind == "RoleBinding":
 			rmap, err = getRoleBindingRelationships(node)
 			if err != nil {
-				klog.V(4).Infof("Failed to get relationships for rolebinding named \"%s\" in namespace \"%s\": %s: %s", node.Name, err)
+				klog.V(4).Infof("Failed to get relationships for rolebinding named \"%s\" in namespace \"%s\": %s: %s", node.Name, node.Namespace, err)
 				continue
 			}
 		default:
