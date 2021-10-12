@@ -60,8 +60,8 @@ const (
 	RelationshipService Relationship = "Service"
 
 	// Kubernetes ServiceAccount relationships.
-	RelationshipServiceAccountSecret          Relationship = "ServiceAccountSecret"
 	RelationshipServiceAccountImagePullSecret Relationship = "ServiceAccountImagePullSecret"
+	RelationshipServiceAccountSecret          Relationship = "ServiceAccountSecret"
 
 	// Kubernetes StorageClass relationships.
 	RelationshipStorageClassProvisioner Relationship = "StorageClassProvisioner"
@@ -453,18 +453,16 @@ func getPodRelationships(n *Node) (*RelationshipMap, error) {
 
 	// RelationshipPodVolume
 	for _, v := range pod.Spec.Volumes {
+		vs := v.VolumeSource
 		switch {
-		case v.ConfigMap != nil:
-			ref = ObjectReference{Kind: "ConfigMap", Name: v.ConfigMap.Name, Namespace: ns}
+		case vs.ConfigMap != nil:
+			ref = ObjectReference{Kind: "ConfigMap", Name: vs.ConfigMap.Name, Namespace: ns}
 			result.AddDependencyByKey(ref.Key(), RelationshipPodVolume)
-		case v.PersistentVolumeClaim != nil:
-			ref = ObjectReference{Kind: "PersistentVolumeClaim", Name: v.PersistentVolumeClaim.ClaimName, Namespace: ns}
+		case vs.PersistentVolumeClaim != nil:
+			ref = ObjectReference{Kind: "PersistentVolumeClaim", Name: vs.PersistentVolumeClaim.ClaimName, Namespace: ns}
 			result.AddDependencyByKey(ref.Key(), RelationshipPodVolume)
-		case v.Secret != nil:
-			ref = ObjectReference{Kind: "Secret", Name: v.Secret.SecretName, Namespace: ns}
-			result.AddDependencyByKey(ref.Key(), RelationshipPodVolume)
-		case v.Projected != nil:
-			for _, src := range v.Projected.Sources {
+		case vs.Projected != nil:
+			for _, src := range vs.Projected.Sources {
 				switch {
 				case src.ConfigMap != nil:
 					ref = ObjectReference{Kind: "ConfigMap", Name: src.ConfigMap.Name, Namespace: ns}
@@ -474,6 +472,9 @@ func getPodRelationships(n *Node) (*RelationshipMap, error) {
 					result.AddDependencyByKey(ref.Key(), RelationshipPodVolume)
 				}
 			}
+		case vs.Secret != nil:
+			ref = ObjectReference{Kind: "Secret", Name: vs.Secret.SecretName, Namespace: ns}
+			result.AddDependencyByKey(ref.Key(), RelationshipPodVolume)
 		}
 	}
 
@@ -523,7 +524,7 @@ func getServiceRelationships(n *Node) (*RelationshipMap, error) {
 	ns := svc.Namespace
 	result := newRelationshipMap()
 
-	// RelationshipServiceSelector
+	// RelationshipService
 	selector, err := labels.ValidatedSelectorFromSet(labels.Set(svc.Spec.Selector))
 	if err != nil {
 		return nil, err
