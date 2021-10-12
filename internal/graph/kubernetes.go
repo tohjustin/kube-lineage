@@ -65,6 +65,15 @@ const (
 
 	// Kubernetes StorageClass relationships.
 	RelationshipStorageClassProvisioner Relationship = "StorageClassProvisioner"
+
+	// Kubernetes VolumeAttachment relationships.
+	RelationshipVolumeAttachmentAttacher                    Relationship = "VolumeAttachmentAttacher"
+	RelationshipVolumeAttachmentNode                        Relationship = "VolumeAttachmentNode"
+	RelationshipVolumeAttachmentSourceVolume                Relationship = "VolumeAttachmentSourceVolume"
+	RelationshipVolumeAttachmentSourceVolumeClaim           Relationship = "VolumeAttachmentSourceVolumeClaim"
+	RelationshipVolumeAttachmentSourceVolumeCSIDriver       Relationship = "VolumeAttachmentSourceVolumeCSIDriver"
+	RelationshipVolumeAttachmentSourceVolumeCSIDriverSecret Relationship = "VolumeAttachmentSourceVolumeCSIDriverSecret"
+	RelationshipVolumeAttachmentSourceVolumeStorageClass    Relationship = "VolumeAttachmentSourceVolumeStorageClass"
 )
 
 // getClusterRoleRelationships returns a map of relationships that this
@@ -594,6 +603,81 @@ func getValidatingWebhookConfigurationRelationships(n *Node) (*RelationshipMap, 
 		if svc := wh.ClientConfig.Service; svc != nil {
 			ref = ObjectReference{Kind: "Service", Namespace: svc.Namespace, Name: svc.Name}
 			result.AddDependencyByKey(ref.Key(), RelationshipWebhookConfigurationService)
+		}
+	}
+
+	return &result, nil
+}
+
+// getVolumeAttachmentRelationships returns a map of relationships that this
+// VolumeAttachment has with other objects, based on what was referenced in its
+// manifest.
+//nolint:funlen,nestif
+func getVolumeAttachmentRelationships(n *Node) (*RelationshipMap, error) {
+	var va storagev1.VolumeAttachment
+	err := runtime.DefaultUnstructuredConverter.FromUnstructured(n.UnstructuredContent(), &va)
+	if err != nil {
+		return nil, err
+	}
+
+	var ref ObjectReference
+	result := newRelationshipMap()
+
+	// RelationshipVolumeAttachmentAttacher
+	if a := va.Spec.Attacher; len(a) > 0 {
+		ref = ObjectReference{Group: "storage.k8s.io", Kind: "CSIDriver", Name: a}
+		result.AddDependencyByKey(ref.Key(), RelationshipVolumeAttachmentAttacher)
+	}
+
+	// RelationshipVolumeAttachmentNode
+	if n := va.Spec.NodeName; len(n) > 0 {
+		ref = ObjectReference{Kind: "Node", Name: n}
+		result.AddDependencyByKey(ref.Key(), RelationshipVolumeAttachmentNode)
+	}
+
+	// RelationshipVolumeAttachmentSourceVolume
+	if pvName := va.Spec.Source.PersistentVolumeName; pvName != nil && len(*pvName) > 0 {
+		ref = ObjectReference{Kind: "PersistentVolume", Name: *pvName}
+		result.AddDependentByKey(ref.Key(), RelationshipVolumeAttachmentSourceVolume)
+	}
+
+	if iv := va.Spec.Source.InlineVolumeSpec; iv != nil {
+		// RelationshipVolumeAttachmentSourceVolumeClaim
+		if iv.ClaimRef != nil {
+			ref = ObjectReference{Kind: "PersistentVolumeClaim", Name: iv.ClaimRef.Name, Namespace: iv.ClaimRef.Namespace}
+			result.AddDependentByKey(ref.Key(), RelationshipVolumeAttachmentSourceVolumeClaim)
+		}
+
+		// RelationshipVolumeAttachmentSourceVolumeStorageClass
+		ref = ObjectReference{Group: "storage.k8s.io", Kind: "StorageClass", Name: iv.StorageClassName}
+		result.AddDependentByKey(ref.Key(), RelationshipVolumeAttachmentSourceVolumeStorageClass)
+
+		// RelationshipVolumeAttachmentSourceVolumeCSIDriver
+		// RelationshipVolumeAttachmentSourceVolumeCSIDriverSecret
+		//nolint:gocritic
+		switch {
+		case iv.PersistentVolumeSource.CSI != nil:
+			csi := iv.PersistentVolumeSource.CSI
+			if d := csi.Driver; len(d) > 0 {
+				ref = ObjectReference{Group: "storage.k8s.io", Kind: "CSIDriver", Name: csi.Driver}
+				result.AddDependentByKey(ref.Key(), RelationshipVolumeAttachmentSourceVolumeCSIDriver)
+			}
+			if ces := csi.ControllerExpandSecretRef; ces != nil {
+				ref = ObjectReference{Kind: "Secret", Name: ces.Name, Namespace: ces.Namespace}
+				result.AddDependentByKey(ref.Key(), RelationshipVolumeAttachmentSourceVolumeCSIDriverSecret)
+			}
+			if cps := csi.ControllerPublishSecretRef; cps != nil {
+				ref = ObjectReference{Kind: "Secret", Name: cps.Name, Namespace: cps.Namespace}
+				result.AddDependentByKey(ref.Key(), RelationshipVolumeAttachmentSourceVolumeCSIDriverSecret)
+			}
+			if nps := csi.NodePublishSecretRef; nps != nil {
+				ref = ObjectReference{Kind: "Secret", Name: nps.Name, Namespace: nps.Namespace}
+				result.AddDependentByKey(ref.Key(), RelationshipVolumeAttachmentSourceVolumeCSIDriverSecret)
+			}
+			if nss := csi.NodeStageSecretRef; nss != nil {
+				ref = ObjectReference{Kind: "Secret", Name: nss.Name, Namespace: nss.Namespace}
+				result.AddDependentByKey(ref.Key(), RelationshipVolumeAttachmentSourceVolumeCSIDriverSecret)
+			}
 		}
 	}
 

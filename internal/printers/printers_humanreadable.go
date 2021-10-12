@@ -9,6 +9,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	eventsv1 "k8s.io/api/events/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	unstructuredv1 "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -361,6 +362,34 @@ func getStatefulSetReadyStatus(u *unstructuredv1.Unstructured) (string, string, 
 	return ready, "", nil
 }
 
+// getVolumeAttachmentReadyStatus returns the ready & status value of a
+// VolumeAttachment.
+func getVolumeAttachmentReadyStatus(u *unstructuredv1.Unstructured) (string, string, error) {
+	var va storagev1.VolumeAttachment
+	err := runtime.DefaultUnstructuredConverter.FromUnstructured(u.UnstructuredContent(), &va)
+	if err != nil {
+		return "", "", err
+	}
+	var ready, status string
+	if va.Status.Attached {
+		ready = "True"
+	} else {
+		ready = "False"
+	}
+	var errTime time.Time
+	if err := va.Status.AttachError; err != nil {
+		status = err.Message
+		errTime = err.Time.Time
+	}
+	if err := va.Status.DetachError; err != nil {
+		if err.Time.After(errTime) {
+			status = err.Message
+		}
+	}
+
+	return ready, status, nil
+}
+
 // nodeToTableRow converts the provided node into a table row.
 //nolint:gocognit,goconst
 func nodeToTableRow(node *graph.Node, rset graph.RelationshipSet, namePrefix string, showGroupFn func(kind string) bool) metav1.TableRow {
@@ -392,6 +421,8 @@ func nodeToTableRow(node *graph.Node, rset graph.RelationshipSet, namePrefix str
 		ready, status, _ = getStatefulSetReadyStatus(node.Unstructured)
 	case node.Group == "events.k8s.io" && node.Kind == "Event":
 		ready, status, _ = getEventReadyStatus(node.Unstructured)
+	case node.Group == "storage.k8s.io" && node.Kind == "VolumeAttachment":
+		ready, status, _ = getVolumeAttachmentReadyStatus(node.Unstructured)
 	case node.Unstructured != nil:
 		ready, status, _ = getObjectReadyStatus(node.Unstructured)
 	}
