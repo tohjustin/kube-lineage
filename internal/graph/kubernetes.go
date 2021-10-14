@@ -45,8 +45,10 @@ const (
 	RelationshipOwnerRef      Relationship = "OwnerReference"
 
 	// Kubernetes PersistentVolume & PersistentVolumeClaim relationships.
-	RelationshipPersistentVolumeClaim        Relationship = "PersistentVolumeClaim"
-	RelationshipPersistentVolumeStorageClass Relationship = "PersistentVolumeStorageClass"
+	RelationshipPersistentVolumeClaim           Relationship = "PersistentVolumeClaim"
+	RelationshipPersistentVolumeCSIDriver       Relationship = "PersistentVolumeCSIDriver"
+	RelationshipPersistentVolumeCSIDriverSecret Relationship = "PersistentVolumeCSIDriverSecret"
+	RelationshipPersistentVolumeStorageClass    Relationship = "PersistentVolumeStorageClass"
 
 	// Kubernetes Pod relationships.
 	RelationshipPodContainerEnv    Relationship = "PodContainerEnvironment"
@@ -352,6 +354,34 @@ func getPersistentVolumeRelationships(n *Node) (*RelationshipMap, error) {
 	if pvcRef := pv.Spec.ClaimRef; pvcRef != nil {
 		ref = ObjectReference{Kind: "PersistentVolumeClaim", Name: pvcRef.Name, Namespace: ns}
 		result.AddDependentByKey(ref.Key(), RelationshipPersistentVolumeClaim)
+	}
+
+	// RelationshipPersistentVolumeCSIDriver
+	// RelationshipPersistentVolumeCSIDriverSecret
+	//nolint:gocritic
+	switch {
+	case pv.Spec.PersistentVolumeSource.CSI != nil:
+		csi := pv.Spec.PersistentVolumeSource.CSI
+		if d := csi.Driver; len(d) > 0 {
+			ref = ObjectReference{Group: "storage.k8s.io", Kind: "CSIDriver", Name: d}
+			result.AddDependencyByKey(ref.Key(), RelationshipPersistentVolumeCSIDriver)
+		}
+		if ces := csi.ControllerExpandSecretRef; ces != nil {
+			ref = ObjectReference{Kind: "Secret", Name: ces.Name, Namespace: ces.Namespace}
+			result.AddDependentByKey(ref.Key(), RelationshipPersistentVolumeCSIDriverSecret)
+		}
+		if cps := csi.ControllerPublishSecretRef; cps != nil {
+			ref = ObjectReference{Kind: "Secret", Name: cps.Name, Namespace: cps.Namespace}
+			result.AddDependentByKey(ref.Key(), RelationshipPersistentVolumeCSIDriverSecret)
+		}
+		if nps := csi.NodePublishSecretRef; nps != nil {
+			ref = ObjectReference{Kind: "Secret", Name: nps.Name, Namespace: nps.Namespace}
+			result.AddDependentByKey(ref.Key(), RelationshipPersistentVolumeCSIDriverSecret)
+		}
+		if nss := csi.NodeStageSecretRef; nss != nil {
+			ref = ObjectReference{Kind: "Secret", Name: nss.Name, Namespace: nss.Namespace}
+			result.AddDependentByKey(ref.Key(), RelationshipPersistentVolumeCSIDriverSecret)
+		}
 	}
 
 	// RelationshipPersistentVolumeStorageClass
