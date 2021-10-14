@@ -422,6 +422,13 @@ func ResolveDependents(m meta.RESTMapper, objects []unstructuredv1.Unstructured,
 				klog.V(4).Infof("Failed to get relationships for ingressclass named \"%s\": %s", node.Name, err)
 				continue
 			}
+		// Populate dependents based on RuntimeClass relationships
+		case node.Group == "node.k8s.io" && node.Kind == "RuntimeClass":
+			rmap, err = getRuntimeClassRelationships(node)
+			if err != nil {
+				klog.V(4).Infof("Failed to get relationships for runtimeclass named \"%s\": %s", node.Name, err)
+				continue
+			}
 		// Populate dependents based on ClusterRole relationships
 		case node.Group == "rbac.authorization.k8s.io" && node.Kind == "ClusterRole":
 			rmap, err = getClusterRoleRelationships(node)

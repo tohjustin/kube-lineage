@@ -7,6 +7,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	extensionsv1beta1 "k8s.io/api/extensions/v1beta1"
 	networkingv1 "k8s.io/api/networking/v1"
+	nodev1 "k8s.io/api/node/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -59,6 +60,9 @@ const (
 	RelationshipPodVolume                Relationship = "PodVolume"
 	RelationshipPodVolumeCSIDriver       Relationship = "PodVolumeCSIDriver"
 	RelationshipPodVolumeCSIDriverSecret Relationship = "PodVolumeCSIDriverSecret" //nolint:gosec
+
+	// Kubernetes RuntimeClass relationships.
+	RelationshipRuntimeClass Relationship = "RuntimeClass"
 
 	// Kubernetes Service relationships.
 	RelationshipService Relationship = "Service"
@@ -548,6 +552,32 @@ func getRoleBindingRelationships(n *Node) (*RelationshipMap, error) {
 	r := rb.RoleRef
 	ref = ObjectReference{Group: r.APIGroup, Kind: r.Kind, Namespace: ns, Name: r.Name}
 	result.AddDependencyByKey(ref.Key(), RelationshipRoleBindingRole)
+
+	return &result, nil
+}
+
+// getRuntimeClassRelationships returns a map of relationships that this
+// RuntimeClass has with other objects, based on what was referenced in its
+// manifest.
+func getRuntimeClassRelationships(n *Node) (*RelationshipMap, error) {
+	var rc nodev1.RuntimeClass
+	err := runtime.DefaultUnstructuredConverter.FromUnstructured(n.UnstructuredContent(), &rc)
+	if err != nil {
+		return nil, err
+	}
+
+	var ols ObjectLabelSelector
+	result := newRelationshipMap()
+
+	// RelationshipRuntimeClass
+	if s := rc.Scheduling; s != nil {
+		selector, err := labels.ValidatedSelectorFromSet(labels.Set(s.NodeSelector))
+		if err != nil {
+			return nil, err
+		}
+		ols = ObjectLabelSelector{Kind: "Node", Selector: selector}
+		result.AddDependencyByLabelSelector(ols, RelationshipRuntimeClass)
+	}
 
 	return &result, nil
 }
