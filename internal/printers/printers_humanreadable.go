@@ -9,6 +9,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	eventsv1 "k8s.io/api/events/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	unstructuredv1 "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -310,6 +311,27 @@ func getPodReadyStatus(u *unstructuredv1.Unstructured) (string, string, error) {
 	return ready, reason, nil
 }
 
+// getPodDisruptionBudgetReadyStatus returns the ready & status value of a
+// PodDisruptionBudget.
+//nolint:unparam
+func getPodDisruptionBudgetReadyStatus(u *unstructuredv1.Unstructured) (string, string, error) {
+	var pdb policyv1.PodDisruptionBudget
+	err := runtime.DefaultUnstructuredConverter.FromUnstructured(u.UnstructuredContent(), &pdb)
+	if err != nil {
+		return "", "", err
+	}
+	var reason string
+	for _, condition := range pdb.Status.Conditions {
+		if condition.ObservedGeneration == pdb.Generation {
+			if condition.Type == policyv1.DisruptionAllowedCondition {
+				reason = condition.Reason
+			}
+		}
+	}
+
+	return "", reason, nil
+}
+
 // getReplicaSetReadyStatus returns the ready & status value of a ReplicaSet
 // which is based off the table cell values computed by printReplicaSet from
 // https://github.com/kubernetes/kubernetes/blob/v1.22.1/pkg/printers/internalversion/printers.go.
@@ -419,6 +441,8 @@ func nodeToTableRow(node *graph.Node, rset graph.RelationshipSet, namePrefix str
 		ready, status, _ = getReplicaSetReadyStatus(node.Unstructured)
 	case node.Group == "apps" && node.Kind == "StatefulSet":
 		ready, status, _ = getStatefulSetReadyStatus(node.Unstructured)
+	case node.Group == "policy" && node.Kind == "PodDisruptionBudget":
+		ready, status, _ = getPodDisruptionBudgetReadyStatus(node.Unstructured)
 	case node.Group == "events.k8s.io" && node.Kind == "Event":
 		ready, status, _ = getEventReadyStatus(node.Unstructured)
 	case node.Group == "storage.k8s.io" && node.Kind == "VolumeAttachment":

@@ -8,6 +8,7 @@ import (
 	extensionsv1beta1 "k8s.io/api/extensions/v1beta1"
 	networkingv1 "k8s.io/api/networking/v1"
 	nodev1 "k8s.io/api/node/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -60,6 +61,9 @@ const (
 	RelationshipPodVolume                Relationship = "PodVolume"
 	RelationshipPodVolumeCSIDriver       Relationship = "PodVolumeCSIDriver"
 	RelationshipPodVolumeCSIDriverSecret Relationship = "PodVolumeCSIDriverSecret" //nolint:gosec
+
+	// Kubernetes PodDisruptionBudget relationships.
+	RelationshipPodDisruptionBudget Relationship = "PodDisruptionBudget"
 
 	// Kubernetes RuntimeClass relationships.
 	RelationshipRuntimeClass Relationship = "RuntimeClass"
@@ -522,6 +526,33 @@ func getPodRelationships(n *Node) (*RelationshipMap, error) {
 			ref = ObjectReference{Kind: "Secret", Name: vs.Secret.SecretName, Namespace: ns}
 			result.AddDependencyByKey(ref.Key(), RelationshipPodVolume)
 		}
+	}
+
+	return &result, nil
+}
+
+// getPodDisruptionBudgetRelationships returns a map of relationships that this
+// PodDisruptionBudget has with other objects, based on what was referenced in its
+// manifest.
+func getPodDisruptionBudgetRelationships(n *Node) (*RelationshipMap, error) {
+	var pdb policyv1.PodDisruptionBudget
+	err := runtime.DefaultUnstructuredConverter.FromUnstructured(n.UnstructuredContent(), &pdb)
+	if err != nil {
+		return nil, err
+	}
+
+	var ols ObjectLabelSelector
+	ns := pdb.Namespace
+	result := newRelationshipMap()
+
+	// RelationshipPodDisruptionBudget
+	if s := pdb.Spec.Selector; s != nil {
+		selector, err := metav1.LabelSelectorAsSelector(s)
+		if err != nil {
+			return nil, err
+		}
+		ols = ObjectLabelSelector{Kind: "Pod", Namespace: ns, Selector: selector}
+		result.AddDependencyByLabelSelector(ols, RelationshipPodDisruptionBudget)
 	}
 
 	return &result, nil
