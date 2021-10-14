@@ -51,12 +51,14 @@ const (
 	RelationshipPersistentVolumeStorageClass    Relationship = "PersistentVolumeStorageClass"
 
 	// Kubernetes Pod relationships.
-	RelationshipPodContainerEnv    Relationship = "PodContainerEnvironment"
-	RelationshipPodImagePullSecret Relationship = "PodImagePullSecret" //nolint:gosec
-	RelationshipPodNode            Relationship = "PodNode"
-	RelationshipPodPriorityClass   Relationship = "PodPriorityClass"
-	RelationshipPodRuntimeClass    Relationship = "PodRuntimeClass"
-	RelationshipPodVolume          Relationship = "PodVolume"
+	RelationshipPodContainerEnv          Relationship = "PodContainerEnvironment"
+	RelationshipPodImagePullSecret       Relationship = "PodImagePullSecret" //nolint:gosec
+	RelationshipPodNode                  Relationship = "PodNode"
+	RelationshipPodPriorityClass         Relationship = "PodPriorityClass"
+	RelationshipPodRuntimeClass          Relationship = "PodRuntimeClass"
+	RelationshipPodVolume                Relationship = "PodVolume"
+	RelationshipPodVolumeCSIDriver       Relationship = "PodVolumeCSIDriver"
+	RelationshipPodVolumeCSIDriverSecret Relationship = "PodVolumeCSIDriverSecret" //nolint:gosec
 
 	// Kubernetes Service relationships.
 	RelationshipService Relationship = "Service"
@@ -482,12 +484,22 @@ func getPodRelationships(n *Node) (*RelationshipMap, error) {
 	}
 
 	// RelationshipPodVolume
+	// RelationshipPodVolumeCSIDriver
+	// RelationshipPodVolumeCSIDriverSecret
 	for _, v := range pod.Spec.Volumes {
 		vs := v.VolumeSource
 		switch {
 		case vs.ConfigMap != nil:
 			ref = ObjectReference{Kind: "ConfigMap", Name: vs.ConfigMap.Name, Namespace: ns}
 			result.AddDependencyByKey(ref.Key(), RelationshipPodVolume)
+		case vs.CSI != nil:
+			csi := vs.CSI
+			ref = ObjectReference{Group: "storage.k8s.io", Kind: "CSIDriver", Name: csi.Driver}
+			result.AddDependencyByKey(ref.Key(), RelationshipPodVolumeCSIDriver)
+			if nps := csi.NodePublishSecretRef; nps != nil {
+				ref = ObjectReference{Kind: "Secret", Name: nps.Name, Namespace: ns}
+				result.AddDependencyByKey(ref.Key(), RelationshipPodVolumeCSIDriverSecret)
+			}
 		case vs.PersistentVolumeClaim != nil:
 			ref = ObjectReference{Kind: "PersistentVolumeClaim", Name: vs.PersistentVolumeClaim.ClaimName, Namespace: ns}
 			result.AddDependencyByKey(ref.Key(), RelationshipPodVolume)
