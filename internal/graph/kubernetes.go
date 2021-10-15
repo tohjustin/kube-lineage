@@ -62,6 +62,7 @@ const (
 	RelationshipPodNode                  Relationship = "PodNode"
 	RelationshipPodPriorityClass         Relationship = "PodPriorityClass"
 	RelationshipPodRuntimeClass          Relationship = "PodRuntimeClass"
+	RelationshipPodSecurityPolicy        Relationship = "PodSecurityPolicy"
 	RelationshipPodVolume                Relationship = "PodVolume"
 	RelationshipPodVolumeCSIDriver       Relationship = "PodVolumeCSIDriver"
 	RelationshipPodVolumeCSIDriverSecret Relationship = "PodVolumeCSIDriverSecret" //nolint:gosec
@@ -516,6 +517,15 @@ func getPodRelationships(n *Node) (*RelationshipMap, error) {
 	if rc := pod.Spec.RuntimeClassName; rc != nil && len(*rc) != 0 {
 		ref = ObjectReference{Group: "node.k8s.io", Kind: "RuntimeClass", Name: *rc}
 		result.AddDependencyByKey(ref.Key(), RelationshipPodRuntimeClass)
+	}
+
+	// RelationshipPodSecurityPolicy
+	// Hardcode "k8s.io/kubernetes/pkg/security/podsecuritypolicy/util.ValidatedPSPAnnotation"
+	// as "kubernetes.io/psp" so we don't need import the entire k8s.io/kubernetes
+	// package
+	if psp, ok := pod.Annotations["kubernetes.io/psp"]; ok {
+		ref = ObjectReference{Group: "policy", Kind: "PodSecurityPolicy", Name: psp}
+		result.AddDependencyByKey(ref.Key(), RelationshipPodSecurityPolicy)
 	}
 
 	// RelationshipPodVolume
