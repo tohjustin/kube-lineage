@@ -9,6 +9,7 @@ import (
 	unstructuredv1 "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog/v2"
 )
 
@@ -28,6 +29,23 @@ type ObjectLabelSelector struct {
 func (o *ObjectLabelSelector) Key() ObjectLabelSelectorKey {
 	k := fmt.Sprintf("%s\\%s\\%s\\%s", o.Group, o.Kind, o.Namespace, o.Selector)
 	return ObjectLabelSelectorKey(k)
+}
+
+// ObjectSelectorKey is a compact representation of an ObjectSelector.
+// Typically used as key types for maps.
+type ObjectSelectorKey string
+
+// ObjectSelector is a reference to a collection of Kubernetes objects.
+type ObjectSelector struct {
+	Group      string
+	Kind       string
+	Namespaces sets.String
+}
+
+// Key converts the ObjectSelector into a ObjectSelectorKey.
+func (o *ObjectSelector) Key() ObjectSelectorKey {
+	k := fmt.Sprintf("%s\\%s\\%s", o.Group, o.Kind, o.Namespaces)
+	return ObjectSelectorKey(k)
 }
 
 // ObjectReferenceKey is a compact representation of an ObjectReference.
@@ -75,22 +93,28 @@ func (s RelationshipSet) List() []string {
 type RelationshipMap struct {
 	DependenciesByLabelSelector map[ObjectLabelSelectorKey]RelationshipSet
 	DependenciesByRef           map[ObjectReferenceKey]RelationshipSet
+	DependenciesBySelector      map[ObjectSelectorKey]RelationshipSet
 	DependenciesByUID           map[types.UID]RelationshipSet
 	DependentsByLabelSelector   map[ObjectLabelSelectorKey]RelationshipSet
 	DependentsByRef             map[ObjectReferenceKey]RelationshipSet
+	DependentsBySelector        map[ObjectSelectorKey]RelationshipSet
 	DependentsByUID             map[types.UID]RelationshipSet
 	ObjectLabelSelectors        map[ObjectLabelSelectorKey]ObjectLabelSelector
+	ObjectSelectors             map[ObjectSelectorKey]ObjectSelector
 }
 
 func newRelationshipMap() RelationshipMap {
 	return RelationshipMap{
 		DependenciesByLabelSelector: map[ObjectLabelSelectorKey]RelationshipSet{},
 		DependenciesByRef:           map[ObjectReferenceKey]RelationshipSet{},
+		DependenciesBySelector:      map[ObjectSelectorKey]RelationshipSet{},
 		DependenciesByUID:           map[types.UID]RelationshipSet{},
 		DependentsByLabelSelector:   map[ObjectLabelSelectorKey]RelationshipSet{},
 		DependentsByRef:             map[ObjectReferenceKey]RelationshipSet{},
+		DependentsBySelector:        map[ObjectSelectorKey]RelationshipSet{},
 		DependentsByUID:             map[types.UID]RelationshipSet{},
 		ObjectLabelSelectors:        map[ObjectLabelSelectorKey]ObjectLabelSelector{},
+		ObjectSelectors:             map[ObjectSelectorKey]ObjectSelector{},
 	}
 }
 
@@ -108,6 +132,15 @@ func (m *RelationshipMap) AddDependencyByLabelSelector(o ObjectLabelSelector, r 
 	}
 	m.DependenciesByLabelSelector[k][r] = struct{}{}
 	m.ObjectLabelSelectors[k] = o
+}
+
+func (m *RelationshipMap) AddDependencyBySelector(o ObjectSelector, r Relationship) {
+	k := o.Key()
+	if _, ok := m.DependenciesBySelector[k]; !ok {
+		m.DependenciesBySelector[k] = RelationshipSet{}
+	}
+	m.DependenciesBySelector[k][r] = struct{}{}
+	m.ObjectSelectors[k] = o
 }
 
 func (m *RelationshipMap) AddDependencyByUID(uid types.UID, r Relationship) {
@@ -131,6 +164,15 @@ func (m *RelationshipMap) AddDependentByLabelSelector(o ObjectLabelSelector, r R
 	}
 	m.DependentsByLabelSelector[k][r] = struct{}{}
 	m.ObjectLabelSelectors[k] = o
+}
+
+func (m *RelationshipMap) AddDependentBySelector(o ObjectSelector, r Relationship) {
+	k := o.Key()
+	if _, ok := m.DependentsBySelector[k]; !ok {
+		m.DependentsBySelector[k] = RelationshipSet{}
+	}
+	m.DependentsBySelector[k][r] = struct{}{}
+	m.ObjectSelectors[k] = o
 }
 
 func (m *RelationshipMap) AddDependentByUID(uid types.UID, r Relationship) {
@@ -276,11 +318,22 @@ func ResolveDependents(m meta.RESTMapper, objects []unstructuredv1.Unstructured,
 		}
 	}
 
-	resolveSelectorToNodes := func(o ObjectLabelSelector) []*Node {
+	resolveLabelSelectorToNodes := func(o ObjectLabelSelector) []*Node {
 		var result []*Node
 		for _, n := range globalMapByUID {
 			if n.Group == o.Group && n.Kind == o.Kind && n.Namespace == o.Namespace {
 				if ok := o.Selector.Matches(labels.Set(n.GetLabels())); ok {
+					result = append(result, n)
+				}
+			}
+		}
+		return result
+	}
+	resolveSelectorToNodes := func(o ObjectSelector) []*Node {
+		var result []*Node
+		for _, n := range globalMapByUID {
+			if n.Group == o.Group && n.Kind == o.Kind {
+				if len(o.Namespaces) == 0 || o.Namespaces.Has(n.Namespace) {
 					result = append(result, n)
 				}
 			}
@@ -304,7 +357,7 @@ func ResolveDependents(m meta.RESTMapper, objects []unstructuredv1.Unstructured,
 		}
 		for k, rset := range rmap.DependenciesByLabelSelector {
 			if ols, ok := rmap.ObjectLabelSelectors[k]; ok {
-				for _, n := range resolveSelectorToNodes(ols) {
+				for _, n := range resolveLabelSelectorToNodes(ols) {
 					for r := range rset {
 						n.AddDependent(node.UID, r)
 					}
@@ -313,7 +366,25 @@ func ResolveDependents(m meta.RESTMapper, objects []unstructuredv1.Unstructured,
 		}
 		for k, rset := range rmap.DependentsByLabelSelector {
 			if ols, ok := rmap.ObjectLabelSelectors[k]; ok {
-				for _, n := range resolveSelectorToNodes(ols) {
+				for _, n := range resolveLabelSelectorToNodes(ols) {
+					for r := range rset {
+						node.AddDependent(n.UID, r)
+					}
+				}
+			}
+		}
+		for k, rset := range rmap.DependenciesBySelector {
+			if os, ok := rmap.ObjectSelectors[k]; ok {
+				for _, n := range resolveSelectorToNodes(os) {
+					for r := range rset {
+						n.AddDependent(node.UID, r)
+					}
+				}
+			}
+		}
+		for k, rset := range rmap.DependentsBySelector {
+			if os, ok := rmap.ObjectSelectors[k]; ok {
+				for _, n := range resolveSelectorToNodes(os) {
 					for r := range rset {
 						node.AddDependent(n.UID, r)
 					}
