@@ -63,6 +63,7 @@ const (
 	RelationshipPodPriorityClass         Relationship = "PodPriorityClass"
 	RelationshipPodRuntimeClass          Relationship = "PodRuntimeClass"
 	RelationshipPodSecurityPolicy        Relationship = "PodSecurityPolicy"
+	RelationshipPodServiceAccount        Relationship = "PodServiceAccount"
 	RelationshipPodVolume                Relationship = "PodVolume"
 	RelationshipPodVolumeCSIDriver       Relationship = "PodVolumeCSIDriver"
 	RelationshipPodVolumeCSIDriverSecret Relationship = "PodVolumeCSIDriverSecret" //nolint:gosec
@@ -526,6 +527,12 @@ func getPodRelationships(n *Node) (*RelationshipMap, error) {
 	if psp, ok := pod.Annotations["kubernetes.io/psp"]; ok {
 		ref = ObjectReference{Group: "policy", Kind: "PodSecurityPolicy", Name: psp}
 		result.AddDependencyByKey(ref.Key(), RelationshipPodSecurityPolicy)
+	}
+
+	// RelationshipPodServiceAccount
+	if sa := pod.Spec.ServiceAccountName; len(sa) != 0 {
+		ref = ObjectReference{Kind: "ServiceAccount", Name: sa, Namespace: ns}
+		result.AddDependencyByKey(ref.Key(), RelationshipPodServiceAccount)
 	}
 
 	// RelationshipPodVolume
