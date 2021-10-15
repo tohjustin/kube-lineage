@@ -95,6 +95,7 @@ List of supported relationships used for discovering dependent objects:
   - [PersistentVolume References](https://kubernetes.io/docs/reference/kubernetes-api/config-and-storage-resources/persistent-volume-v1/) & [PersistentVolumeClaim References](https://kubernetes.io/docs/reference/kubernetes-api/config-and-storage-resources/persistent-volume-claim-v1/)
   - [Pod References](https://kubernetes.io/docs/reference/kubernetes-api/workload-resources/pod-v1/)
   - [PodDisruptionBudget References](https://kubernetes.io/docs/reference/kubernetes-api/policy-resources/pod-disruption-budget-v1/)
+  - [PodSecurityPolicy References](https://kubernetes.io/docs/reference/kubernetes-api/policy-resources/pod-disruption-budget-v1/)
   - [RuntimeClass References](https://kubernetes.io/docs/reference/kubernetes-api/cluster-resources/runtime-class-v1/)
   - [Service References](https://kubernetes.io/docs/reference/kubernetes-api/service-resources/service-v1/)
   - [ServiceAccount References](https://kubernetes.io/docs/reference/kubernetes-api/authentication-resources/service-account-v1/)

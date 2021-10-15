@@ -465,6 +465,13 @@ func ResolveDependents(m meta.RESTMapper, objects []unstructuredv1.Unstructured,
 				klog.V(4).Infof("Failed to get relationships for poddisruptionbudget named \"%s\": %s", node.Name, err)
 				continue
 			}
+		// Populate dependents based on PodSecurityPolicy relationships
+		case node.Group == "policy" && node.Kind == "PodSecurityPolicy":
+			rmap, err = getPodSecurityPolicyRelationships(node)
+			if err != nil {
+				klog.V(4).Infof("Failed to get relationships for podsecuritypolicy named \"%s\": %s", node.Name, err)
+				continue
+			}
 		// Populate dependents based on MutatingWebhookConfiguration relationships
 		case node.Group == "admissionregistration.k8s.io" && node.Kind == "MutatingWebhookConfiguration":
 			rmap, err = getMutatingWebhookConfigurationRelationships(node)
