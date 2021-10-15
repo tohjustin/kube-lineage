@@ -16,15 +16,18 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 const (
 	// Kubernetes ClusterRole, ClusterRoleBinding, RoleBinding relationships.
 	RelationshipClusterRoleAggregationRule Relationship = "ClusterRoleAggregationRule"
+	RelationshipClusterRolePolicyRule      Relationship = "ClusterRolePolicyRule"
 	RelationshipClusterRoleBindingSubject  Relationship = "ClusterRoleBindingSubject"
 	RelationshipClusterRoleBindingRole     Relationship = "ClusterRoleBindingRole"
 	RelationshipRoleBindingSubject         Relationship = "RoleBindingSubject"
 	RelationshipRoleBindingRole            Relationship = "RoleBindingRole"
+	RelationshipRolePolicyRule             Relationship = "RolePolicyRule"
 
 	// Kubernetes CSINode relationships.
 	RelationshipCSINodeDriver Relationship = "CSINodeDriver"
@@ -105,6 +108,8 @@ func getClusterRoleRelationships(n *Node) (*RelationshipMap, error) {
 	}
 
 	var ols ObjectLabelSelector
+	var os ObjectSelector
+	var ref ObjectReference
 	result := newRelationshipMap()
 
 	// RelationshipClusterRoleAggregationRule
@@ -116,6 +121,22 @@ func getClusterRoleRelationships(n *Node) (*RelationshipMap, error) {
 			}
 			ols = ObjectLabelSelector{Group: "rbac.authorization.k8s.io", Kind: "ClusterRole", Selector: selector}
 			result.AddDependencyByLabelSelector(ols, RelationshipClusterRoleAggregationRule)
+		}
+	}
+
+	// RelationshipClusterRolePolicyRule
+	for _, r := range cr.Rules {
+		if podSecurityPolicyMatches(r) {
+			switch len(r.ResourceNames) {
+			case 0:
+				os = ObjectSelector{Group: "policy", Kind: "PodSecurityPolicy"}
+				result.AddDependencyBySelector(os, RelationshipClusterRolePolicyRule)
+			default:
+				for _, n := range r.ResourceNames {
+					ref = ObjectReference{Group: "policy", Kind: "PodSecurityPolicy", Name: n}
+					result.AddDependencyByKey(ref.Key(), RelationshipClusterRolePolicyRule)
+				}
+			}
 		}
 	}
 
@@ -599,6 +620,38 @@ func getPodSecurityPolicyRelationships(n *Node) (*RelationshipMap, error) {
 	return &result, nil
 }
 
+// getRoleRelationships returns a map of relationships that this Role has with
+// other objects, based on what was referenced in its manifest.
+func getRoleRelationships(n *Node) (*RelationshipMap, error) {
+	var ro rbacv1.Role
+	err := runtime.DefaultUnstructuredConverter.FromUnstructured(n.UnstructuredContent(), &ro)
+	if err != nil {
+		return nil, err
+	}
+
+	var os ObjectSelector
+	var ref ObjectReference
+	result := newRelationshipMap()
+
+	// RelationshipRolePolicyRule
+	for _, r := range ro.Rules {
+		if podSecurityPolicyMatches(r) {
+			switch len(r.ResourceNames) {
+			case 0:
+				os = ObjectSelector{Group: "policy", Kind: "PodSecurityPolicy"}
+				result.AddDependencyBySelector(os, RelationshipRolePolicyRule)
+			default:
+				for _, n := range r.ResourceNames {
+					ref = ObjectReference{Group: "policy", Kind: "PodSecurityPolicy", Name: n}
+					result.AddDependencyByKey(ref.Key(), RelationshipRolePolicyRule)
+				}
+			}
+		}
+	}
+
+	return &result, nil
+}
+
 // getRoleBindingRelationships returns a map of relationships that this
 // RoleBinding has with other objects, based on what was referenced in its
 // manifest.
@@ -827,4 +880,17 @@ func getVolumeAttachmentRelationships(n *Node) (*RelationshipMap, error) {
 	}
 
 	return &result, nil
+}
+
+// podSecurityPolicyMatches returns true if PolicyRule matches "policy" APIGroup,
+// "podsecuritypolicies" resource & "use" verb.
+func podSecurityPolicyMatches(r rbacv1.PolicyRule) bool {
+	if sets.NewString(r.APIGroups...).HasAny(rbacv1.APIGroupAll, "extensions", "policy") {
+		if sets.NewString(r.Resources...).HasAny(rbacv1.ResourceAll, "podsecuritypolicies") {
+			if sets.NewString(r.Verbs...).HasAny(rbacv1.VerbAll, "use") {
+				return true
+			}
+		}
+	}
+	return false
 }
