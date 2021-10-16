@@ -902,7 +902,11 @@ func getVolumeAttachmentRelationships(n *Node) (*RelationshipMap, error) {
 // podSecurityPolicyMatches returns true if PolicyRule matches "policy" APIGroup,
 // "podsecuritypolicies" resource & "use" verb.
 func podSecurityPolicyMatches(r rbacv1.PolicyRule) bool {
-	if sets.NewString(r.APIGroups...).HasAny(rbacv1.APIGroupAll, "extensions", "policy") {
+	// NOTE: As of Kubernetes v1.22.1, the PodSecurityPolicy admission controller
+	// 	     still checks against extensions API group for backward compatibility
+	//       so we're going to do the same over here.
+	//       See https://github.com/kubernetes/kubernetes/blob/v1.22.1/plugin/pkg/admission/security/podsecuritypolicy/admission.go#L346
+	if sets.NewString(r.APIGroups...).HasAny(rbacv1.APIGroupAll, extensionsv1beta1.GroupName, policyv1beta1.GroupName) {
 		if sets.NewString(r.Resources...).HasAny(rbacv1.ResourceAll, "podsecuritypolicies") {
 			if sets.NewString(r.Verbs...).HasAny(rbacv1.VerbAll, "use") {
 				return true
