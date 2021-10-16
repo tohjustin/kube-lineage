@@ -17,9 +17,13 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
+	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
 )
 
 const (
+	// Kubernetes APIService relationships.
+	RelationshipAPIService Relationship = "APIService"
+
 	// Kubernetes ClusterRole, ClusterRoleBinding, RoleBinding relationships.
 	RelationshipClusterRoleAggregationRule Relationship = "ClusterRoleAggregationRule"
 	RelationshipClusterRolePolicyRule      Relationship = "ClusterRolePolicyRule"
@@ -99,6 +103,29 @@ const (
 	RelationshipVolumeAttachmentSourceVolumeStorageClass    Relationship = "VolumeAttachmentSourceVolumeStorageClass"
 )
 
+// getAPIServiceRelationships returns a map of relationships that this
+// APIService has with other objects, based on what was referenced in its
+// manifest.
+func getAPIServiceRelationships(n *Node) (*RelationshipMap, error) {
+	var apisvc apiregistrationv1.APIService
+	err := runtime.DefaultUnstructuredConverter.FromUnstructured(n.UnstructuredContent(), &apisvc)
+	if err != nil {
+		return nil, err
+	}
+
+	// var os ObjectSelector
+	var ref ObjectReference
+	result := newRelationshipMap()
+
+	// RelationshipAPIService
+	if svc := apisvc.Spec.Service; svc != nil {
+		ref = ObjectReference{Kind: "Service", Namespace: svc.Namespace, Name: svc.Name}
+		result.AddDependencyByKey(ref.Key(), RelationshipAPIService)
+	}
+
+	return &result, nil
+}
+
 // getClusterRoleRelationships returns a map of relationships that this
 // ClusterRole has with other objects, based on what was referenced in
 // its manifest.
@@ -109,8 +136,8 @@ func getClusterRoleRelationships(n *Node) (*RelationshipMap, error) {
 		return nil, err
 	}
 
-	var ols ObjectLabelSelector
 	var os ObjectSelector
+	var ols ObjectLabelSelector
 	var ref ObjectReference
 	result := newRelationshipMap()
 
@@ -645,8 +672,8 @@ func getRoleRelationships(n *Node) (*RelationshipMap, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	var os ObjectSelector
+
 	var ref ObjectReference
 	result := newRelationshipMap()
 

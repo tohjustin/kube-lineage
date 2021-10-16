@@ -18,6 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/duration"
 	"k8s.io/client-go/util/jsonpath"
+	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
 
 	"github.com/tohjustin/kube-lineage/internal/graph"
 )
@@ -155,6 +156,28 @@ func getObjectReadyStatus(u *unstructuredv1.Unstructured) (string, string, error
 	status, err := getNestedString(data, objectReadyReasonJSONPath)
 	if err != nil {
 		return ready, "", err
+	}
+
+	return ready, status, nil
+}
+
+// getAPIServiceReadyStatus returns the ready & status value of a APIService
+// which is based off the table cell values computed by printAPIService from
+// https://github.com/kubernetes/kubernetes/blob/v1.22.1/pkg/printers/internalversion/printers.go.
+func getAPIServiceReadyStatus(u *unstructuredv1.Unstructured) (string, string, error) {
+	var apisvc apiregistrationv1.APIService
+	err := runtime.DefaultUnstructuredConverter.FromUnstructured(u.UnstructuredContent(), &apisvc)
+	if err != nil {
+		return "", "", err
+	}
+	var ready, status string
+	for _, condition := range apisvc.Status.Conditions {
+		if condition.Type == apiregistrationv1.Available {
+			ready = string(condition.Status)
+			if condition.Status != apiregistrationv1.ConditionTrue {
+				status = condition.Reason
+			}
+		}
 	}
 
 	return ready, status, nil
@@ -413,7 +436,7 @@ func getVolumeAttachmentReadyStatus(u *unstructuredv1.Unstructured) (string, str
 }
 
 // nodeToTableRow converts the provided node into a table row.
-//nolint:gocognit,goconst
+//nolint:funlen,gocognit,goconst
 func nodeToTableRow(node *graph.Node, rset graph.RelationshipSet, namePrefix string, showGroupFn func(kind string) bool) metav1.TableRow {
 	var name, ready, status, age string
 	var relationships interface{}
@@ -443,6 +466,8 @@ func nodeToTableRow(node *graph.Node, rset graph.RelationshipSet, namePrefix str
 		ready, status, _ = getStatefulSetReadyStatus(node.Unstructured)
 	case node.Group == "policy" && node.Kind == "PodDisruptionBudget":
 		ready, status, _ = getPodDisruptionBudgetReadyStatus(node.Unstructured)
+	case node.Group == "apiregistration.k8s.io" && node.Kind == "APIService":
+		ready, status, _ = getAPIServiceReadyStatus(node.Unstructured)
 	case node.Group == "events.k8s.io" && node.Kind == "Event":
 		ready, status, _ = getEventReadyStatus(node.Unstructured)
 	case node.Group == "storage.k8s.io" && node.Kind == "VolumeAttachment":

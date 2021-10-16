@@ -86,6 +86,7 @@ monitoring-system   └── ServiceAccount/kube-state-metrics                 
 List of supported relationships used for discovering dependent objects:
 
 - Kubernetes
+  - [APIService References](https://kubernetes.io/docs/reference/kubernetes-api/cluster-resources/api-service-v1/)
   - [ClusterRole References](https://kubernetes.io/docs/reference/kubernetes-api/authorization-resources/cluster-role-v1/), [ClusterRoleBinding References](https://kubernetes.io/docs/reference/kubernetes-api/authorization-resources/cluster-role-binding-v1/), [Role References](https://kubernetes.io/docs/reference/kubernetes-api/authorization-resources/role-v1/) & [RoleBinding References](https://kubernetes.io/docs/reference/kubernetes-api/authorization-resources/role-binding-v1/)
   - [Controller References](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/api-machinery/controller-ref.md) & [Owner References](https://kubernetes.io/docs/concepts/overview/working-with-objects/owners-dependents/)
   - [CSINode References](https://kubernetes.io/docs/reference/kubernetes-api/config-and-storage-resources/csi-node-v1/)

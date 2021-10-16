@@ -486,6 +486,13 @@ func ResolveDependents(m meta.RESTMapper, objects []unstructuredv1.Unstructured,
 				klog.V(4).Infof("Failed to get relationships for validatingwebhookconfiguration named \"%s\": %s", node.Name, err)
 				continue
 			}
+		// Populate dependents based on APIService relationships
+		case node.Group == "apiregistration.k8s.io" && node.Kind == "APIService":
+			rmap, err = getAPIServiceRelationships(node)
+			if err != nil {
+				klog.V(4).Infof("Failed to get relationships for apiservice named \"%s\": %s", node.Name, err)
+				continue
+			}
 		// Populate dependents based on Event relationships
 		case (node.Group == "events.k8s.io" || node.Group == "") && node.Kind == "Event":
 			rmap, err = getEventRelationships(node)

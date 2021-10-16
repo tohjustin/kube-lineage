@@ -12,5 +12,6 @@ require (
 	k8s.io/cli-runtime v0.22.1
 	k8s.io/client-go v0.22.1
 	k8s.io/klog/v2 v2.9.0
+	k8s.io/kube-aggregator v0.22.1
 	k8s.io/kubectl v0.22.1
 )
