@@ -94,6 +94,7 @@ List of supported relationships used for discovering dependent objects:
   - [Event References](https://kubernetes.io/docs/reference/kubernetes-api/cluster-resources/event-v1/)
   - [Ingress References](https://kubernetes.io/docs/reference/kubernetes-api/service-resources/ingress-v1/) & [IngressClass References](https://kubernetes.io/docs/reference/kubernetes-api/service-resources/ingress-class-v1/)
   - [MutatingWebhookConfiguration References](https://kubernetes.io/docs/reference/kubernetes-api/extend-resources/mutating-webhook-configuration-v1/) & [ValidatingWebhookConfiguration References](https://kubernetes.io/docs/reference/kubernetes-api/extend-resources/validating-webhook-configuration-v1/)
+  - [NetworkPolicy References](https://kubernetes.io/docs/reference/kubernetes-api/policy-resources/network-policy-v1/)
   - [PersistentVolume References](https://kubernetes.io/docs/reference/kubernetes-api/config-and-storage-resources/persistent-volume-v1/) & [PersistentVolumeClaim References](https://kubernetes.io/docs/reference/kubernetes-api/config-and-storage-resources/persistent-volume-claim-v1/)
   - [Pod References](https://kubernetes.io/docs/reference/kubernetes-api/workload-resources/pod-v1/)
   - [PodDisruptionBudget References](https://kubernetes.io/docs/reference/kubernetes-api/policy-resources/pod-disruption-budget-v1/)

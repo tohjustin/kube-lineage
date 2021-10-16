@@ -514,6 +514,13 @@ func ResolveDependents(m meta.RESTMapper, objects []unstructuredv1.Unstructured,
 				klog.V(4).Infof("Failed to get relationships for ingressclass named \"%s\": %s", node.Name, err)
 				continue
 			}
+		// Populate dependents based on NetworkPolicy relationships
+		case node.Group == "networking.k8s.io" && node.Kind == "NetworkPolicy":
+			rmap, err = getNetworkPolicyRelationships(node)
+			if err != nil {
+				klog.V(4).Infof("Failed to get relationships for networkpolicy named \"%s\": %s", node.Name, err)
+				continue
+			}
 		// Populate dependents based on RuntimeClass relationships
 		case node.Group == "node.k8s.io" && node.Kind == "RuntimeClass":
 			rmap, err = getRuntimeClassRelationships(node)

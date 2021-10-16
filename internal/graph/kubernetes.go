@@ -54,6 +54,9 @@ const (
 	// Kubernetes MutatingWebhookConfiguration & ValidatingWebhookConfiguration relationships.
 	RelationshipWebhookConfigurationService Relationship = "WebhookConfigurationService"
 
+	// Kubernetes RelationshipNetworkPolicy relationships.
+	RelationshipNetworkPolicy Relationship = "NetworkPolicy"
+
 	// Kubernetes Owner-Dependent relationships.
 	RelationshipControllerRef Relationship = "ControllerReference"
 	RelationshipOwnerRef      Relationship = "OwnerReference"
@@ -424,6 +427,31 @@ func getMutatingWebhookConfigurationRelationships(n *Node) (*RelationshipMap, er
 			result.AddDependencyByKey(ref.Key(), RelationshipWebhookConfigurationService)
 		}
 	}
+
+	return &result, nil
+}
+
+// getNetworkPolicyRelationships returns a map of relationships that this
+// NetworkPolicy has with other objects, based on what was referenced in its
+// manifest.
+func getNetworkPolicyRelationships(n *Node) (*RelationshipMap, error) {
+	var netpol networkingv1.NetworkPolicy
+	err := runtime.DefaultUnstructuredConverter.FromUnstructured(n.UnstructuredContent(), &netpol)
+	if err != nil {
+		return nil, err
+	}
+
+	var ols ObjectLabelSelector
+	ns := netpol.Namespace
+	result := newRelationshipMap()
+
+	// RelationshipNetworkPolicy
+	selector, err := metav1.LabelSelectorAsSelector(&netpol.Spec.PodSelector)
+	if err != nil {
+		return nil, err
+	}
+	ols = ObjectLabelSelector{Kind: "Pod", Namespace: ns, Selector: selector}
+	result.AddDependencyByLabelSelector(ols, RelationshipNetworkPolicy)
 
 	return &result, nil
 }
