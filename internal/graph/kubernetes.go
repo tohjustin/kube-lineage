@@ -12,6 +12,7 @@ import (
 	policyv1beta1 "k8s.io/api/policy/v1beta1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	storagev1beta1 "k8s.io/api/storage/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -35,6 +36,9 @@ const (
 
 	// Kubernetes CSINode relationships.
 	RelationshipCSINodeDriver Relationship = "CSINodeDriver"
+
+	// Kubernetes CSIStorageCapacity relationships.
+	RelationshipCSIStorageCapacityStorageClass Relationship = "CSIStorageCapacityStorageClass"
 
 	// Kubernetes Event relationships.
 	RelationshipEventRegarding Relationship = "EventRegarding"
@@ -216,6 +220,28 @@ func getCSINodeRelationships(n *Node) (*RelationshipMap, error) {
 	for _, d := range csin.Spec.Drivers {
 		ref = ObjectReference{Group: "storage.k8s.io", Kind: "CSIDriver", Name: d.Name}
 		result.AddDependentByKey(ref.Key(), RelationshipCSINodeDriver)
+	}
+
+	return &result, nil
+}
+
+// getCSIStorageCapacityRelationships returns a map of relationships that this
+// CSIStorageCapacity has with other objects, based on what was referenced in
+// its manifest.
+func getCSIStorageCapacityRelationships(n *Node) (*RelationshipMap, error) {
+	var csisc storagev1beta1.CSIStorageCapacity
+	err := runtime.DefaultUnstructuredConverter.FromUnstructured(n.UnstructuredContent(), &csisc)
+	if err != nil {
+		return nil, err
+	}
+
+	var ref ObjectReference
+	result := newRelationshipMap()
+
+	// RelationshipCSIStorageCapacityStorageClass
+	if sc := csisc.StorageClassName; len(sc) > 0 {
+		ref = ObjectReference{Group: "storage.k8s.io", Kind: "StorageClass", Name: sc}
+		result.AddDependencyByKey(ref.Key(), RelationshipCSIStorageCapacityStorageClass)
 	}
 
 	return &result, nil

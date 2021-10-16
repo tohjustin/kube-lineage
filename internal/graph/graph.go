@@ -556,6 +556,13 @@ func ResolveDependents(m meta.RESTMapper, objects []unstructuredv1.Unstructured,
 				klog.V(4).Infof("Failed to get relationships for csinode named \"%s\": %s: %s", node.Name, err)
 				continue
 			}
+		// Populate dependents based on CSIStorageCapacity relationships
+		case node.Group == "storage.k8s.io" && node.Kind == "CSIStorageCapacity":
+			rmap, err = getCSIStorageCapacityRelationships(node)
+			if err != nil {
+				klog.V(4).Infof("Failed to get relationships for csistoragecapacity named \"%s\": %s: %s", node.Name, err)
+				continue
+			}
 		// Populate dependents based on StorageClass relationships
 		case node.Group == "storage.k8s.io" && node.Kind == "StorageClass":
 			rmap, err = getStorageClassRelationships(node)
