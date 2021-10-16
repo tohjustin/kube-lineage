@@ -1,7 +1,7 @@
 # kube-lineage
 
 [![build](https://github.com/tohjustin/kube-lineage/actions/workflows/build.yaml/badge.svg)](https://github.com/tohjustin/kube-lineage/actions/workflows/build.yaml)
-[![release](https://aegisbadges.appspot.com/static?subject=release&status=v0.3.0&color=318FE0)](https://github.com/tohjustin/kube-lineage/releases)
+[![release](https://aegisbadges.appspot.com/static?subject=release&status=v0.4.0&color=318FE0)](https://github.com/tohjustin/kube-lineage/releases)
 [![kubernetes compatibility](https://aegisbadges.appspot.com/static?subject=k8s%20compatibility&status=v1.19%2B&color=318FE0)](https://endoflife.date/kubernetes)
 [![helm compatibility](https://aegisbadges.appspot.com/static?subject=helm%20compatibility&status=v3&color=318FE0)](https://endoflife.date/kubernetes)
 [![license](https://aegisbadges.appspot.com/static?subject=license&status=Apache-2.0&color=318FE0)](./LICENSE.md)
@@ -17,60 +17,78 @@ Deployment/coredns                             1/1               30m
         └── Service/kube-dns                   -                 30m
             └── EndpointSlice/kube-dns-pxh5w   -                 30m
 
-$ kube-lineage node k3d-dev-server-1 -o wide
-NAMESPACE           NAME                                                 READY   STATUS         AGE   RELATIONSHIPS
-                    Node/k3d-dev-server-1                                True    KubeletReady   30m   -
-                    ├── CSINode/k3d-dev-server-1                         -                      30m   [OwnerReference]
-kube-node-lease     ├── Lease/k3d-dev-server-1                           -                      30m   [OwnerReference]
-kube-system         ├── Pod/metrics-server-7b4f8b595-mxtfp               1/1     Running        30m   [PodNode]
-kube-system         │   └── Service/metrics-server                       -                      30m   [Service]
-kube-system         │       └── EndpointSlice/metrics-server-lbhb9       -                      30m   [ControllerReference OwnerReference]
-monitoring-system   └── Pod/kube-state-metrics-6cb9b94fdf-bkz22          1/1     Running        25m   [PodNode]
-monitoring-system       └── Service/kube-state-metrics                   -                      25m   [Service]
-monitoring-system           └── EndpointSlice/kube-state-metrics-zkggx   -                      25m   [ControllerReference OwnerReference]
-
 $ kube-lineage clusterrole/system:metrics-server --show-group -o wide
-NAMESPACE     NAME                                                                          READY   STATUS    AGE   RELATIONSHIPS
-              ClusterRole.rbac.authorization.k8s.io/system:metrics-server                   -                 30m   -
-              └── ClusterRoleBinding.rbac.authorization.k8s.io/system:metrics-server        -                 30m   [ClusterRoleBindingRole]
-kube-system       └── ServiceAccount/metrics-server                                         -                 30m   [ClusterRoleBindingSubject]
-kube-system           └── Secret/metrics-server-token-sz96w                                 -                 30m   [ServiceAccountSecret]
-kube-system               └── Pod/metrics-server-7b4f8b595-mxtfp                            1/1     Running   30m   [PodVolume]
-kube-system                   └── Service/metrics-server                                    -                 30m   [Service]
-kube-system                       └── EndpointSlice.discovery.k8s.io/metrics-server-lbhb9   -                 30m   [ControllerReference OwnerReference]
+NAMESPACE     NAME                                                                           READY   STATUS    AGE    RELATIONSHIPS
+              ClusterRole.rbac.authorization.k8s.io/system:metrics-server                    -                 30m   []
+              └── ClusterRoleBinding.rbac.authorization.k8s.io/system:metrics-server         -                 30m   [ClusterRoleBindingRole]
+kube-system       └── ServiceAccount/metrics-server                                          -                 30m   [ClusterRoleBindingSubject]
+kube-system           ├── Pod/metrics-server-7b4f8b595-8m7rz                                 1/1     Running   30m   [PodServiceAccount]
+kube-system           │   └── Service/metrics-server                                         -                 30m   [Service]
+                      │       ├── APIService.apiregistration.k8s.io/v1beta1.metrics.k8s.io   True              30m   [APIService]
+kube-system           │       └── EndpointSlice.discovery.k8s.io/metrics-server-wb2cm        -                 30m   [ControllerReference OwnerReference]
+kube-system           └── Secret/metrics-server-token-nqw85                                  -                 30m   [ServiceAccountSecret]
+kube-system               └── Pod/metrics-server-7b4f8b595-8m7rz                             1/1     Running   30m   [PodVolume]
+```
+
+Use either the `split` or `split-wide` output format to display dependents grouped by their type.
+
+```shell
+$ kube-lineage node k3d-dev-server-1 -o split
+NAME                       DRIVERS   AGE
+csinode/k3d-dev-server-1   0         25m
+
+NAMESPACE           NAME                                         ADDRESSTYPE   PORTS   ENDPOINTS    AGE
+monitoring-system   endpointslice/ksm-kube-state-metrics-r4dsh   IPv4          8080    10.42.0.10   25m
+
+NAMESPACE           LAST SEEN   TYPE     REASON      OBJECT                                       MESSAGE
+monitoring-system   4m40s       Normal   Scheduled   pod/ksm-kube-state-metrics-d785759dd-75gnc   Successfully assigned monitoring-system/ksm-kube-state-metrics-d785759dd-75gnc to k3d-dev-server-1
+monitoring-system   4m40s       Normal   Pulling     pod/ksm-kube-state-metrics-d785759dd-75gnc   Pulling image "k8s.gcr.io/kube-state-metrics/kube-state-metrics:v2.2.0"
+monitoring-system   4m36s       Normal   Pulled      pod/ksm-kube-state-metrics-d785759dd-75gnc   Successfully pulled image "k8s.gcr.io/kube-state-metrics/kube-state-metrics:v2.2.0" in 4.110982123s
+monitoring-system   4m36s       Normal   Created     pod/ksm-kube-state-metrics-d785759dd-75gnc   Created container kube-state-metrics
+monitoring-system   4m36s       Normal   Started     pod/ksm-kube-state-metrics-d785759dd-75gnc   Started container kube-state-metrics
+
+NAME                    STATUS   ROLES    AGE    VERSION
+node/k3d-dev-server-1   Ready    master   25m    v1.19.15+k3s2
+
+NAMESPACE           NAME                                         READY   STATUS    RESTARTS   AGE
+monitoring-system   pod/ksm-kube-state-metrics-d785759dd-75gnc   1/1     Running   0          25m
+
+NAMESPACE           NAME                             TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)    AGE
+monitoring-system   service/ksm-kube-state-metrics   ClusterIP   10.43.153.203   <none>        8080/TCP   25m
 ```
 
 Use the `helm` subcommand to display Helm release resources & their respective dependents in a Kubernetes cluster.
 
 ```shell
 $ kube-lineage helm traefik -o wide
-NAMESPACE     NAME                                                                          READY   STATUS     AGE   RELATIONSHIPS
-kube-system   traefik                                                                       True    Deployed   30m   []
-              ├── ClusterRole/traefik                                                       -                  30m   [HelmRelease]
-              │   └── ClusterRoleBinding/traefik                                            -                  30m   [ClusterRoleBindingRole]
-kube-system   │       └── ServiceAccount/traefik                                            -                  30m   [ClusterRoleBindingSubject]
-kube-system   │           └── Secret/traefik-token-zgvr4                                    -                  30m   [ServiceAccountSecret]
-kube-system   │               └── Pod/traefik-5dd496474-7mj6c                               1/1     Running    30m   [PodVolume]
-kube-system   │                   ├── Service/traefik                                       -                  30m   [Service]
-kube-system   │                   │   ├── DaemonSet/svclb-traefik                           1/1                30m   [ControllerReference OwnerReference]
-kube-system   │                   │   │   ├── ControllerRevision/svclb-traefik-694565b64f   -                  30m   [ControllerReference OwnerReference]
-kube-system   │                   │   │   └── Pod/svclb-traefik-rrpdf                       2/2     Running    30m   [ControllerReference OwnerReference]
-kube-system   │                   │   └── EndpointSlice/traefik-klkwg                       -                  30m   [ControllerReference OwnerReference]
-kube-system   │                   └── Service/traefik-prometheus                            -                  30m   [Service]
-kube-system   │                       └── EndpointSlice/traefik-prometheus-4ksf4            -                  30m   [ControllerReference OwnerReference]
-              ├── ClusterRoleBinding/traefik                                                -                  30m   [HelmRelease]
-kube-system   ├── ConfigMap/traefik                                                         -                  30m   [HelmRelease]
-kube-system   │   └── Pod/traefik-5dd496474-7mj6c                                           1/1     Running    30m   [PodVolume]
-kube-system   ├── ConfigMap/traefik-test                                                    -                  30m   [HelmRelease]
-kube-system   ├── Deployment/traefik                                                        1/1                30m   [HelmRelease]
-kube-system   │   └── ReplicaSet/traefik-5dd496474                                          1/1                30m   [ControllerReference OwnerReference]
-kube-system   │       └── Pod/traefik-5dd496474-7mj6c                                       1/1     Running    30m   [ControllerReference OwnerReference]
-kube-system   ├── Secret/sh.helm.release.v1.traefik.v1                                      -                  30m   [HelmStorage]
-kube-system   ├── Secret/traefik-default-cert                                               -                  30m   [HelmRelease]
-kube-system   │   └── Pod/traefik-5dd496474-7mj6c                                           1/1     Running    30m   [PodVolume]
-kube-system   ├── Service/traefik                                                           -                  30m   [HelmRelease]
-kube-system   ├── Service/traefik-prometheus                                                -                  30m   [HelmRelease]
-kube-system   └── ServiceAccount/traefik                                                    -                  30m   [HelmRelease]
+NAMESPACE     NAME                                                                      READY   STATUS     AGE    RELATIONSHIPS
+kube-system   traefik                                                                   True    Deployed   30m    []
+              ├── ClusterRole/traefik                                                   -                  30m    [HelmRelease]
+              │   └── ClusterRoleBinding/traefik                                        -                  30m    [ClusterRoleBindingRole]
+kube-system   │       └── ServiceAccount/traefik                                        -                  30m    [ClusterRoleBindingSubject]
+kube-system   │           ├── Pod/traefik-5dd496474-cr6d8                               1/1     Running    30m    [PodServiceAccount]
+kube-system   │           │   ├── Service/traefik                                       -                  30m    [Service]
+kube-system   │           │   │   ├── DaemonSet/svclb-traefik                           1/1                30m    [ControllerReference OwnerReference]
+kube-system   │           │   │   │   ├── ControllerRevision/svclb-traefik-5b8d578897   -                  30m    [ControllerReference OwnerReference]
+kube-system   │           │   │   │   └── Pod/svclb-traefik-8vfqq                       2/2     Running    30m    [ControllerReference OwnerReference]
+kube-system   │           │   │   └── EndpointSlice/traefik-lns42                       -                  30m    [ControllerReference OwnerReference]
+kube-system   │           │   └── Service/traefik-prometheus                            -                  30m    [Service]
+kube-system   │           │       └── EndpointSlice/traefik-prometheus-c72cc            -                  30m    [ControllerReference OwnerReference]
+kube-system   │           └── Secret/traefik-token-qgfn9                                -                  30m    [ServiceAccountSecret]
+kube-system   │               └── Pod/traefik-5dd496474-cr6d8                           1/1     Running    30m    [PodVolume]
+              ├── ClusterRoleBinding/traefik                                            -                  30m    [HelmRelease]
+kube-system   ├── ConfigMap/traefik                                                     -                  30m    [HelmRelease]
+kube-system   │   └── Pod/traefik-5dd496474-cr6d8                                       1/1     Running    30m    [PodVolume]
+kube-system   ├── ConfigMap/traefik-test                                                -                  30m    [HelmRelease]
+kube-system   ├── Deployment/traefik                                                    1/1                30m    [HelmRelease]
+kube-system   │   └── ReplicaSet/traefik-5dd496474                                      1/1                30m    [ControllerReference OwnerReference]
+kube-system   │       └── Pod/traefik-5dd496474-cr6d8                                   1/1     Running    30m    [ControllerReference OwnerReference]
+kube-system   ├── Secret/sh.helm.release.v1.traefik.v1                                  -                  30m    [HelmStorage]
+kube-system   ├── Secret/traefik-default-cert                                           -                  30m    [HelmRelease]
+kube-system   │   └── Pod/traefik-5dd496474-cr6d8                                       1/1     Running    30m    [PodVolume]
+kube-system   ├── Service/traefik                                                       -                  30m    [HelmRelease]
+kube-system   ├── Service/traefik-prometheus                                            -                  30m    [HelmRelease]
+kube-system   └── ServiceAccount/traefik                                                -                  30m    [HelmRelease]
 
 $ kube-lineage helm kube-state-metrics --depth 1 -n monitoring-system -L app.kubernetes.io/managed-by -L owner
 NAMESPACE           NAME                                                  READY   STATUS     AGE   MANAGED-BY   OWNER
