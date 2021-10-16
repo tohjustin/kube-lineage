@@ -5,12 +5,14 @@ import (
 
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
+	eventsv1 "k8s.io/api/events/v1"
 	extensionsv1beta1 "k8s.io/api/extensions/v1beta1"
 	networkingv1 "k8s.io/api/networking/v1"
 	nodev1 "k8s.io/api/node/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	policyv1beta1 "k8s.io/api/policy/v1beta1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	schedulingv1 "k8s.io/api/scheduling/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	storagev1beta1 "k8s.io/api/storage/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -19,6 +21,14 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
+)
+
+// Well-known labels & annotations.
+const (
+	// Hardcode "k8s.io/kubernetes/pkg/security/podsecuritypolicy/util.ValidatedPSPAnnotation"
+	// as "kubernetes.io/psp" so we don't need import the entire k8s.io/kubernetes
+	// package.
+	ValidatedPSPAnnotation = "kubernetes.io/psp"
 )
 
 const (
@@ -155,7 +165,7 @@ func getClusterRoleRelationships(n *Node) (*RelationshipMap, error) {
 			if err != nil {
 				return nil, err
 			}
-			ols = ObjectLabelSelector{Group: "rbac.authorization.k8s.io", Kind: "ClusterRole", Selector: selector}
+			ols = ObjectLabelSelector{Group: rbacv1.GroupName, Kind: "ClusterRole", Selector: selector}
 			result.AddDependencyByLabelSelector(ols, RelationshipClusterRoleAggregationRule)
 		}
 	}
@@ -165,11 +175,11 @@ func getClusterRoleRelationships(n *Node) (*RelationshipMap, error) {
 		if podSecurityPolicyMatches(r) {
 			switch len(r.ResourceNames) {
 			case 0:
-				os = ObjectSelector{Group: "policy", Kind: "PodSecurityPolicy"}
+				os = ObjectSelector{Group: policyv1beta1.GroupName, Kind: "PodSecurityPolicy"}
 				result.AddDependencyBySelector(os, RelationshipClusterRolePolicyRule)
 			default:
 				for _, n := range r.ResourceNames {
-					ref = ObjectReference{Group: "policy", Kind: "PodSecurityPolicy", Name: n}
+					ref = ObjectReference{Group: policyv1beta1.GroupName, Kind: "PodSecurityPolicy", Name: n}
 					result.AddDependencyByKey(ref.Key(), RelationshipClusterRolePolicyRule)
 				}
 			}
@@ -221,7 +231,7 @@ func getCSINodeRelationships(n *Node) (*RelationshipMap, error) {
 
 	// RelationshipCSINodeDriver
 	for _, d := range csin.Spec.Drivers {
-		ref = ObjectReference{Group: "storage.k8s.io", Kind: "CSIDriver", Name: d.Name}
+		ref = ObjectReference{Group: storagev1.GroupName, Kind: "CSIDriver", Name: d.Name}
 		result.AddDependentByKey(ref.Key(), RelationshipCSINodeDriver)
 	}
 
@@ -243,7 +253,7 @@ func getCSIStorageCapacityRelationships(n *Node) (*RelationshipMap, error) {
 
 	// RelationshipCSIStorageCapacityStorageClass
 	if sc := csisc.StorageClassName; len(sc) > 0 {
-		ref = ObjectReference{Group: "storage.k8s.io", Kind: "StorageClass", Name: sc}
+		ref = ObjectReference{Group: storagev1.GroupName, Kind: "StorageClass", Name: sc}
 		result.AddDependencyByKey(ref.Key(), RelationshipCSIStorageCapacityStorageClass)
 	}
 
@@ -256,11 +266,11 @@ func getCSIStorageCapacityRelationships(n *Node) (*RelationshipMap, error) {
 func getEventRelationships(n *Node) (*RelationshipMap, error) {
 	result := newRelationshipMap()
 	switch n.Group {
-	case "":
+	case corev1.GroupName:
 		// RelationshipEventRegarding
 		regUID := types.UID(n.GetNestedString("involvedobject", "uid"))
 		result.AddDependencyByUID(regUID, RelationshipEventRegarding)
-	case "events.k8s.io":
+	case eventsv1.GroupName:
 		// RelationshipEventRegarding
 		regUID := types.UID(n.GetNestedString("regarding", "uid"))
 		result.AddDependencyByUID(regUID, RelationshipEventRegarding)
@@ -280,7 +290,7 @@ func getIngressRelationships(n *Node) (*RelationshipMap, error) {
 	ns := n.Namespace
 	result := newRelationshipMap()
 	switch n.Group {
-	case "extensions":
+	case extensionsv1beta1.GroupName:
 		var ing extensionsv1beta1.Ingress
 		err := runtime.DefaultUnstructuredConverter.FromUnstructured(n.UnstructuredContent(), &ing)
 		if err != nil {
@@ -289,7 +299,7 @@ func getIngressRelationships(n *Node) (*RelationshipMap, error) {
 
 		// RelationshipIngressClass
 		if ingc := ing.Spec.IngressClassName; ingc != nil && len(*ingc) > 0 {
-			ref = ObjectReference{Group: "networking.k8s.io", Kind: "IngressClass", Name: *ingc}
+			ref = ObjectReference{Group: networkingv1.GroupName, Kind: "IngressClass", Name: *ingc}
 			result.AddDependencyByKey(ref.Key(), RelationshipIngressClass)
 		}
 
@@ -326,7 +336,7 @@ func getIngressRelationships(n *Node) (*RelationshipMap, error) {
 			ref = ObjectReference{Kind: "Secret", Name: tls.SecretName, Namespace: ns}
 			result.AddDependencyByKey(ref.Key(), RelationshipIngressClass)
 		}
-	case "networking.k8s.io":
+	case networkingv1.GroupName:
 		var ing networkingv1.Ingress
 		err := runtime.DefaultUnstructuredConverter.FromUnstructured(n.UnstructuredContent(), &ing)
 		if err != nil {
@@ -335,7 +345,7 @@ func getIngressRelationships(n *Node) (*RelationshipMap, error) {
 
 		// RelationshipIngressClass
 		if ingc := ing.Spec.IngressClassName; ingc != nil && len(*ingc) > 0 {
-			ref = ObjectReference{Group: "networking.k8s.io", Kind: "IngressClass", Name: *ingc}
+			ref = ObjectReference{Group: networkingv1.GroupName, Kind: "IngressClass", Name: *ingc}
 			result.AddDependencyByKey(ref.Key(), RelationshipIngressClass)
 		}
 
@@ -483,7 +493,7 @@ func getPersistentVolumeRelationships(n *Node) (*RelationshipMap, error) {
 	case pv.Spec.PersistentVolumeSource.CSI != nil:
 		csi := pv.Spec.PersistentVolumeSource.CSI
 		if d := csi.Driver; len(d) > 0 {
-			ref = ObjectReference{Group: "storage.k8s.io", Kind: "CSIDriver", Name: d}
+			ref = ObjectReference{Group: storagev1.GroupName, Kind: "CSIDriver", Name: d}
 			result.AddDependencyByKey(ref.Key(), RelationshipPersistentVolumeCSIDriver)
 		}
 		if ces := csi.ControllerExpandSecretRef; ces != nil {
@@ -506,7 +516,7 @@ func getPersistentVolumeRelationships(n *Node) (*RelationshipMap, error) {
 
 	// RelationshipPersistentVolumeStorageClass
 	if sc := pv.Spec.StorageClassName; len(sc) > 0 {
-		ref = ObjectReference{Group: "storage.k8s.io", Kind: "StorageClass", Name: sc}
+		ref = ObjectReference{Group: storagev1.GroupName, Kind: "StorageClass", Name: sc}
 		result.AddDependencyByKey(ref.Key(), RelationshipPersistentVolumeStorageClass)
 	}
 
@@ -591,22 +601,19 @@ func getPodRelationships(n *Node) (*RelationshipMap, error) {
 
 	// RelationshipPodPriorityClass
 	if pc := pod.Spec.PriorityClassName; len(pc) != 0 {
-		ref = ObjectReference{Group: "scheduling.k8s.io", Kind: "PriorityClass", Name: pc}
+		ref = ObjectReference{Group: schedulingv1.GroupName, Kind: "PriorityClass", Name: pc}
 		result.AddDependencyByKey(ref.Key(), RelationshipPodPriorityClass)
 	}
 
 	// RelationshipPodRuntimeClass
 	if rc := pod.Spec.RuntimeClassName; rc != nil && len(*rc) != 0 {
-		ref = ObjectReference{Group: "node.k8s.io", Kind: "RuntimeClass", Name: *rc}
+		ref = ObjectReference{Group: nodev1.GroupName, Kind: "RuntimeClass", Name: *rc}
 		result.AddDependencyByKey(ref.Key(), RelationshipPodRuntimeClass)
 	}
 
 	// RelationshipPodSecurityPolicy
-	// Hardcode "k8s.io/kubernetes/pkg/security/podsecuritypolicy/util.ValidatedPSPAnnotation"
-	// as "kubernetes.io/psp" so we don't need import the entire k8s.io/kubernetes
-	// package
-	if psp, ok := pod.Annotations["kubernetes.io/psp"]; ok {
-		ref = ObjectReference{Group: "policy", Kind: "PodSecurityPolicy", Name: psp}
+	if psp, ok := pod.Annotations[ValidatedPSPAnnotation]; ok {
+		ref = ObjectReference{Group: policyv1beta1.GroupName, Kind: "PodSecurityPolicy", Name: psp}
 		result.AddDependencyByKey(ref.Key(), RelationshipPodSecurityPolicy)
 	}
 
@@ -627,7 +634,7 @@ func getPodRelationships(n *Node) (*RelationshipMap, error) {
 			result.AddDependencyByKey(ref.Key(), RelationshipPodVolume)
 		case vs.CSI != nil:
 			csi := vs.CSI
-			ref = ObjectReference{Group: "storage.k8s.io", Kind: "CSIDriver", Name: csi.Driver}
+			ref = ObjectReference{Group: storagev1.GroupName, Kind: "CSIDriver", Name: csi.Driver}
 			result.AddDependencyByKey(ref.Key(), RelationshipPodVolumeCSIDriver)
 			if nps := csi.NodePublishSecretRef; nps != nil {
 				ref = ObjectReference{Kind: "Secret", Name: nps.Name, Namespace: ns}
@@ -698,19 +705,19 @@ func getPodSecurityPolicyRelationships(n *Node) (*RelationshipMap, error) {
 
 	// RelationshipPodSecurityPolicyAllowedCSIDriver
 	for _, csi := range psp.Spec.AllowedCSIDrivers {
-		ref = ObjectReference{Group: "storage.k8s.io", Kind: "CSIDriver", Name: csi.Name}
+		ref = ObjectReference{Group: storagev1.GroupName, Kind: "CSIDriver", Name: csi.Name}
 		result.AddDependencyByKey(ref.Key(), RelationshipPodSecurityPolicyAllowedCSIDriver)
 	}
 	if rc := psp.Spec.RuntimeClass; rc != nil {
 		// RelationshipPodSecurityPolicyAllowedRuntimeClass
 		for _, n := range psp.Spec.RuntimeClass.AllowedRuntimeClassNames {
-			ref = ObjectReference{Group: "node.k8s.io", Kind: "RuntimeClass", Name: n}
+			ref = ObjectReference{Group: nodev1.GroupName, Kind: "RuntimeClass", Name: n}
 			result.AddDependencyByKey(ref.Key(), RelationshipPodSecurityPolicyAllowedRuntimeClass)
 		}
 
 		// RelationshipPodSecurityPolicyDefaultRuntimeClass
 		if n := psp.Spec.RuntimeClass.DefaultRuntimeClassName; n != nil {
-			ref = ObjectReference{Group: "node.k8s.io", Kind: "RuntimeClass", Name: *n}
+			ref = ObjectReference{Group: nodev1.GroupName, Kind: "RuntimeClass", Name: *n}
 			result.AddDependencyByKey(ref.Key(), RelationshipPodSecurityPolicyDefaultRuntimeClass)
 		}
 	}
@@ -736,11 +743,11 @@ func getRoleRelationships(n *Node) (*RelationshipMap, error) {
 		if podSecurityPolicyMatches(r) {
 			switch len(r.ResourceNames) {
 			case 0:
-				os = ObjectSelector{Group: "policy", Kind: "PodSecurityPolicy"}
+				os = ObjectSelector{Group: policyv1beta1.GroupName, Kind: "PodSecurityPolicy"}
 				result.AddDependencyBySelector(os, RelationshipRolePolicyRule)
 			default:
 				for _, n := range r.ResourceNames {
-					ref = ObjectReference{Group: "policy", Kind: "PodSecurityPolicy", Name: n}
+					ref = ObjectReference{Group: policyv1beta1.GroupName, Kind: "PodSecurityPolicy", Name: n}
 					result.AddDependencyByKey(ref.Key(), RelationshipRolePolicyRule)
 				}
 			}
@@ -874,7 +881,7 @@ func getStorageClassRelationships(n *Node) (*RelationshipMap, error) {
 
 	// RelationshipStorageClassProvisioner (external provisioners only)
 	if p := sc.Provisioner; len(p) > 0 && !strings.HasPrefix(p, "kubernetes.io/") {
-		ref = ObjectReference{Group: "storage.k8s.io", Kind: "CSIDriver", Name: p}
+		ref = ObjectReference{Group: storagev1.GroupName, Kind: "CSIDriver", Name: p}
 		result.AddDependencyByKey(ref.Key(), RelationshipStorageClassProvisioner)
 	}
 
@@ -921,7 +928,7 @@ func getVolumeAttachmentRelationships(n *Node) (*RelationshipMap, error) {
 
 	// RelationshipVolumeAttachmentAttacher
 	if a := va.Spec.Attacher; len(a) > 0 {
-		ref = ObjectReference{Group: "storage.k8s.io", Kind: "CSIDriver", Name: a}
+		ref = ObjectReference{Group: storagev1.GroupName, Kind: "CSIDriver", Name: a}
 		result.AddDependencyByKey(ref.Key(), RelationshipVolumeAttachmentAttacher)
 	}
 
@@ -945,7 +952,7 @@ func getVolumeAttachmentRelationships(n *Node) (*RelationshipMap, error) {
 		}
 
 		// RelationshipVolumeAttachmentSourceVolumeStorageClass
-		ref = ObjectReference{Group: "storage.k8s.io", Kind: "StorageClass", Name: iv.StorageClassName}
+		ref = ObjectReference{Group: storagev1.GroupName, Kind: "StorageClass", Name: iv.StorageClassName}
 		result.AddDependentByKey(ref.Key(), RelationshipVolumeAttachmentSourceVolumeStorageClass)
 
 		// RelationshipVolumeAttachmentSourceVolumeCSIDriver
@@ -955,7 +962,7 @@ func getVolumeAttachmentRelationships(n *Node) (*RelationshipMap, error) {
 		case iv.PersistentVolumeSource.CSI != nil:
 			csi := iv.PersistentVolumeSource.CSI
 			if d := csi.Driver; len(d) > 0 {
-				ref = ObjectReference{Group: "storage.k8s.io", Kind: "CSIDriver", Name: csi.Driver}
+				ref = ObjectReference{Group: storagev1.GroupName, Kind: "CSIDriver", Name: csi.Driver}
 				result.AddDependentByKey(ref.Key(), RelationshipVolumeAttachmentSourceVolumeCSIDriver)
 			}
 			if ces := csi.ControllerExpandSecretRef; ces != nil {

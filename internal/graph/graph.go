@@ -4,6 +4,17 @@ import (
 	"fmt"
 	"sort"
 
+	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
+	corev1 "k8s.io/api/core/v1"
+	eventsv1 "k8s.io/api/events/v1"
+	extensionsv1beta1 "k8s.io/api/extensions/v1beta1"
+	networkingv1 "k8s.io/api/networking/v1"
+	nodev1 "k8s.io/api/node/v1"
+	policyv1 "k8s.io/api/policy/v1"
+	policyv1beta1 "k8s.io/api/policy/v1beta1"
+	rbacv1 "k8s.io/api/rbac/v1"
+	storagev1 "k8s.io/api/storage/v1"
+	storagev1beta1 "k8s.io/api/storage/v1beta1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	unstructuredv1 "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -11,6 +22,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog/v2"
+	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
 )
 
 // ObjectLabelSelectorKey is a compact representation of an ObjectLabelSelector.
@@ -304,7 +316,7 @@ func ResolveDependents(m meta.RESTMapper, objects []unstructuredv1.Unstructured,
 		globalMapByUID[uid] = &node
 		globalMapByKey[key] = &node
 
-		if node.Group == "" && node.Kind == "Node" {
+		if node.Group == corev1.GroupName && node.Kind == "Node" {
 			// Node events sent by the Kubelet uses the node's name as the
 			// ObjectReference UID, so we include them as keys in our global map to
 			// support lookup by nodename
@@ -312,7 +324,7 @@ func ResolveDependents(m meta.RESTMapper, objects []unstructuredv1.Unstructured,
 			// Node events sent by the kube-proxy uses the node's hostname as the
 			// ObjectReference UID, so we include them as keys in our global map to
 			// support lookup by hostname
-			if hostname, ok := o.GetLabels()["kubernetes.io/hostname"]; ok {
+			if hostname, ok := o.GetLabels()[corev1.LabelHostname]; ok {
 				globalMapByUID[types.UID(hostname)] = &node
 			}
 		}
@@ -424,161 +436,161 @@ func ResolveDependents(m meta.RESTMapper, objects []unstructuredv1.Unstructured,
 	for _, node := range globalMapByUID {
 		switch {
 		// Populate dependents based on PersistentVolume relationships
-		case node.Group == "" && node.Kind == "PersistentVolume":
+		case node.Group == corev1.GroupName && node.Kind == "PersistentVolume":
 			rmap, err = getPersistentVolumeRelationships(node)
 			if err != nil {
 				klog.V(4).Infof("Failed to get relationships for persistentvolume named \"%s\": %s", node.Name, err)
 				continue
 			}
 		// Populate dependents based on PersistentVolumeClaim relationships
-		case node.Group == "" && node.Kind == "PersistentVolumeClaim":
+		case node.Group == corev1.GroupName && node.Kind == "PersistentVolumeClaim":
 			rmap, err = getPersistentVolumeClaimRelationships(node)
 			if err != nil {
 				klog.V(4).Infof("Failed to get relationships for persistentvolumeclaim named \"%s\" in namespace \"%s\": %s", node.Name, node.Namespace, err)
 				continue
 			}
 		// Populate dependents based on Pod relationships
-		case node.Group == "" && node.Kind == "Pod":
+		case node.Group == corev1.GroupName && node.Kind == "Pod":
 			rmap, err = getPodRelationships(node)
 			if err != nil {
 				klog.V(4).Infof("Failed to get relationships for pod named \"%s\" in namespace \"%s\": %s", node.Name, node.Namespace, err)
 				continue
 			}
 		// Populate dependents based on Service relationships
-		case node.Group == "" && node.Kind == "Service":
+		case node.Group == corev1.GroupName && node.Kind == "Service":
 			rmap, err = getServiceRelationships(node)
 			if err != nil {
 				klog.V(4).Infof("Failed to get relationships for service named \"%s\" in namespace \"%s\": %s", node.Name, node.Namespace, err)
 				continue
 			}
 		// Populate dependents based on ServiceAccount relationships
-		case node.Group == "" && node.Kind == "ServiceAccount":
+		case node.Group == corev1.GroupName && node.Kind == "ServiceAccount":
 			rmap, err = getServiceAccountRelationships(node)
 			if err != nil {
 				klog.V(4).Infof("Failed to get relationships for serviceaccount named \"%s\" in namespace \"%s\": %s", node.Name, node.Namespace, err)
 				continue
 			}
-		// Populate dependents based on PodDisruptionBudget relationships
-		case node.Group == "policy" && node.Kind == "PodDisruptionBudget":
-			rmap, err = getPodDisruptionBudgetRelationships(node)
-			if err != nil {
-				klog.V(4).Infof("Failed to get relationships for poddisruptionbudget named \"%s\": %s", node.Name, err)
-				continue
-			}
 		// Populate dependents based on PodSecurityPolicy relationships
-		case node.Group == "policy" && node.Kind == "PodSecurityPolicy":
+		case node.Group == policyv1beta1.GroupName && node.Kind == "PodSecurityPolicy":
 			rmap, err = getPodSecurityPolicyRelationships(node)
 			if err != nil {
 				klog.V(4).Infof("Failed to get relationships for podsecuritypolicy named \"%s\": %s", node.Name, err)
 				continue
 			}
+		// Populate dependents based on PodDisruptionBudget relationships
+		case node.Group == policyv1.GroupName && node.Kind == "PodDisruptionBudget":
+			rmap, err = getPodDisruptionBudgetRelationships(node)
+			if err != nil {
+				klog.V(4).Infof("Failed to get relationships for poddisruptionbudget named \"%s\": %s", node.Name, err)
+				continue
+			}
 		// Populate dependents based on MutatingWebhookConfiguration relationships
-		case node.Group == "admissionregistration.k8s.io" && node.Kind == "MutatingWebhookConfiguration":
+		case node.Group == admissionregistrationv1.GroupName && node.Kind == "MutatingWebhookConfiguration":
 			rmap, err = getMutatingWebhookConfigurationRelationships(node)
 			if err != nil {
 				klog.V(4).Infof("Failed to get relationships for mutatingwebhookconfiguration named \"%s\": %s", node.Name, err)
 				continue
 			}
 		// Populate dependents based on ValidatingWebhookConfiguration relationships
-		case node.Group == "admissionregistration.k8s.io" && node.Kind == "ValidatingWebhookConfiguration":
+		case node.Group == admissionregistrationv1.GroupName && node.Kind == "ValidatingWebhookConfiguration":
 			rmap, err = getValidatingWebhookConfigurationRelationships(node)
 			if err != nil {
 				klog.V(4).Infof("Failed to get relationships for validatingwebhookconfiguration named \"%s\": %s", node.Name, err)
 				continue
 			}
 		// Populate dependents based on APIService relationships
-		case node.Group == "apiregistration.k8s.io" && node.Kind == "APIService":
+		case node.Group == apiregistrationv1.GroupName && node.Kind == "APIService":
 			rmap, err = getAPIServiceRelationships(node)
 			if err != nil {
 				klog.V(4).Infof("Failed to get relationships for apiservice named \"%s\": %s", node.Name, err)
 				continue
 			}
 		// Populate dependents based on Event relationships
-		case (node.Group == "events.k8s.io" || node.Group == "") && node.Kind == "Event":
+		case (node.Group == eventsv1.GroupName || node.Group == corev1.GroupName) && node.Kind == "Event":
 			rmap, err = getEventRelationships(node)
 			if err != nil {
 				klog.V(4).Infof("Failed to get relationships for event named \"%s\" in namespace \"%s\": %s", node.Name, node.Namespace, err)
 				continue
 			}
 		// Populate dependents based on Ingress relationships
-		case (node.Group == "networking.k8s.io" || node.Group == "extensions") && node.Kind == "Ingress":
+		case (node.Group == networkingv1.GroupName || node.Group == extensionsv1beta1.GroupName) && node.Kind == "Ingress":
 			rmap, err = getIngressRelationships(node)
 			if err != nil {
 				klog.V(4).Infof("Failed to get relationships for ingress named \"%s\" in namespace \"%s\": %s", node.Name, node.Namespace, err)
 				continue
 			}
 		// Populate dependents based on IngressClass relationships
-		case node.Group == "networking.k8s.io" && node.Kind == "IngressClass":
+		case node.Group == networkingv1.GroupName && node.Kind == "IngressClass":
 			rmap, err = getIngressClassRelationships(node)
 			if err != nil {
 				klog.V(4).Infof("Failed to get relationships for ingressclass named \"%s\": %s", node.Name, err)
 				continue
 			}
 		// Populate dependents based on NetworkPolicy relationships
-		case node.Group == "networking.k8s.io" && node.Kind == "NetworkPolicy":
+		case node.Group == networkingv1.GroupName && node.Kind == "NetworkPolicy":
 			rmap, err = getNetworkPolicyRelationships(node)
 			if err != nil {
 				klog.V(4).Infof("Failed to get relationships for networkpolicy named \"%s\": %s", node.Name, err)
 				continue
 			}
 		// Populate dependents based on RuntimeClass relationships
-		case node.Group == "node.k8s.io" && node.Kind == "RuntimeClass":
+		case node.Group == nodev1.GroupName && node.Kind == "RuntimeClass":
 			rmap, err = getRuntimeClassRelationships(node)
 			if err != nil {
 				klog.V(4).Infof("Failed to get relationships for runtimeclass named \"%s\": %s", node.Name, err)
 				continue
 			}
 		// Populate dependents based on ClusterRole relationships
-		case node.Group == "rbac.authorization.k8s.io" && node.Kind == "ClusterRole":
+		case node.Group == rbacv1.GroupName && node.Kind == "ClusterRole":
 			rmap, err = getClusterRoleRelationships(node)
 			if err != nil {
 				klog.V(4).Infof("Failed to get relationships for clusterrole named \"%s\": %s", node.Name, err)
 				continue
 			}
 		// Populate dependents based on ClusterRoleBinding relationships
-		case node.Group == "rbac.authorization.k8s.io" && node.Kind == "ClusterRoleBinding":
+		case node.Group == rbacv1.GroupName && node.Kind == "ClusterRoleBinding":
 			rmap, err = getClusterRoleBindingRelationships(node)
 			if err != nil {
 				klog.V(4).Infof("Failed to get relationships for clusterrolebinding named \"%s\": %s", node.Name, err)
 				continue
 			}
 		// Populate dependents based on Role relationships
-		case node.Group == "rbac.authorization.k8s.io" && node.Kind == "Role":
+		case node.Group == rbacv1.GroupName && node.Kind == "Role":
 			rmap, err = getRoleRelationships(node)
 			if err != nil {
 				klog.V(4).Infof("Failed to get relationships for role named \"%s\" in namespace \"%s\": %s: %s", node.Name, node.Namespace, err)
 				continue
 			}
 		// Populate dependents based on RoleBinding relationships
-		case node.Group == "rbac.authorization.k8s.io" && node.Kind == "RoleBinding":
+		case node.Group == rbacv1.GroupName && node.Kind == "RoleBinding":
 			rmap, err = getRoleBindingRelationships(node)
 			if err != nil {
 				klog.V(4).Infof("Failed to get relationships for rolebinding named \"%s\" in namespace \"%s\": %s: %s", node.Name, node.Namespace, err)
 				continue
 			}
-		// Populate dependents based on CSINode relationships
-		case node.Group == "storage.k8s.io" && node.Kind == "CSINode":
-			rmap, err = getCSINodeRelationships(node)
-			if err != nil {
-				klog.V(4).Infof("Failed to get relationships for csinode named \"%s\": %s: %s", node.Name, err)
-				continue
-			}
 		// Populate dependents based on CSIStorageCapacity relationships
-		case node.Group == "storage.k8s.io" && node.Kind == "CSIStorageCapacity":
+		case node.Group == storagev1beta1.GroupName && node.Kind == "CSIStorageCapacity":
 			rmap, err = getCSIStorageCapacityRelationships(node)
 			if err != nil {
 				klog.V(4).Infof("Failed to get relationships for csistoragecapacity named \"%s\": %s: %s", node.Name, err)
 				continue
 			}
+		// Populate dependents based on CSINode relationships
+		case node.Group == storagev1.GroupName && node.Kind == "CSINode":
+			rmap, err = getCSINodeRelationships(node)
+			if err != nil {
+				klog.V(4).Infof("Failed to get relationships for csinode named \"%s\": %s: %s", node.Name, err)
+				continue
+			}
 		// Populate dependents based on StorageClass relationships
-		case node.Group == "storage.k8s.io" && node.Kind == "StorageClass":
+		case node.Group == storagev1.GroupName && node.Kind == "StorageClass":
 			rmap, err = getStorageClassRelationships(node)
 			if err != nil {
 				klog.V(4).Infof("Failed to get relationships for storageclass named \"%s\": %s: %s", node.Name, err)
 				continue
 			}
 		// Populate dependents based on VolumeAttachment relationships
-		case node.Group == "storage.k8s.io" && node.Kind == "VolumeAttachment":
+		case node.Group == storagev1.GroupName && node.Kind == "VolumeAttachment":
 			rmap, err = getVolumeAttachmentRelationships(node)
 			if err != nil {
 				klog.V(4).Infof("Failed to get relationships for volumeattachment named \"%s\": %s: %s", node.Name, err)

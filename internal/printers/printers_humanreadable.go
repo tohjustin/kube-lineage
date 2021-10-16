@@ -343,16 +343,16 @@ func getPodDisruptionBudgetReadyStatus(u *unstructuredv1.Unstructured) (string, 
 	if err != nil {
 		return "", "", err
 	}
-	var reason string
+	var status string
 	for _, condition := range pdb.Status.Conditions {
 		if condition.ObservedGeneration == pdb.Generation {
 			if condition.Type == policyv1.DisruptionAllowedCondition {
-				reason = condition.Reason
+				status = condition.Reason
 			}
 		}
 	}
 
-	return "", reason, nil
+	return "", status, nil
 }
 
 // getReplicaSetReadyStatus returns the ready & status value of a ReplicaSet
@@ -450,27 +450,27 @@ func nodeToTableRow(node *graph.Node, rset graph.RelationshipSet, namePrefix str
 		name = fmt.Sprintf("%s%s/%s", namePrefix, node.Kind, node.Name)
 	}
 	switch {
-	case node.Group == "" && node.Kind == "Event":
+	case node.Group == corev1.GroupName && node.Kind == "Event":
 		ready, status, _ = getEventCoreReadyStatus(node.Unstructured)
-	case node.Group == "" && node.Kind == "Pod":
+	case node.Group == corev1.GroupName && node.Kind == "Pod":
 		ready, status, _ = getPodReadyStatus(node.Unstructured)
-	case node.Group == "" && node.Kind == "ReplicationController":
+	case node.Group == corev1.GroupName && node.Kind == "ReplicationController":
 		ready, status, _ = getReplicationControllerReadyStatus(node.Unstructured)
-	case node.Group == "apps" && node.Kind == "DaemonSet":
+	case node.Group == appsv1.GroupName && node.Kind == "DaemonSet":
 		ready, status, _ = getDaemonSetReadyStatus(node.Unstructured)
-	case node.Group == "apps" && node.Kind == "Deployment":
+	case node.Group == appsv1.GroupName && node.Kind == "Deployment":
 		ready, status, _ = getDeploymentReadyStatus(node.Unstructured)
-	case node.Group == "apps" && node.Kind == "ReplicaSet":
+	case node.Group == appsv1.GroupName && node.Kind == "ReplicaSet":
 		ready, status, _ = getReplicaSetReadyStatus(node.Unstructured)
-	case node.Group == "apps" && node.Kind == "StatefulSet":
+	case node.Group == appsv1.GroupName && node.Kind == "StatefulSet":
 		ready, status, _ = getStatefulSetReadyStatus(node.Unstructured)
-	case node.Group == "policy" && node.Kind == "PodDisruptionBudget":
+	case node.Group == policyv1.GroupName && node.Kind == "PodDisruptionBudget":
 		ready, status, _ = getPodDisruptionBudgetReadyStatus(node.Unstructured)
-	case node.Group == "apiregistration.k8s.io" && node.Kind == "APIService":
+	case node.Group == apiregistrationv1.GroupName && node.Kind == "APIService":
 		ready, status, _ = getAPIServiceReadyStatus(node.Unstructured)
-	case node.Group == "events.k8s.io" && node.Kind == "Event":
+	case node.Group == eventsv1.GroupName && node.Kind == "Event":
 		ready, status, _ = getEventReadyStatus(node.Unstructured)
-	case node.Group == "storage.k8s.io" && node.Kind == "VolumeAttachment":
+	case node.Group == storagev1.GroupName && node.Kind == "VolumeAttachment":
 		ready, status, _ = getVolumeAttachmentReadyStatus(node.Unstructured)
 	case node.Unstructured != nil:
 		ready, status, _ = getObjectReadyStatus(node.Unstructured)
