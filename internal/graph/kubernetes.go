@@ -20,6 +20,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/apiserver/pkg/authentication/serviceaccount"
+	"k8s.io/apiserver/pkg/authentication/user"
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
 )
 
@@ -130,7 +132,6 @@ func getAPIServiceRelationships(n *Node) (*RelationshipMap, error) {
 		return nil, err
 	}
 
-	// var os ObjectSelector
 	var ref ObjectReference
 	result := newRelationshipMap()
 
@@ -199,14 +200,45 @@ func getClusterRoleBindingRelationships(n *Node) (*RelationshipMap, error) {
 		return nil, err
 	}
 
+	var os ObjectSelector
 	var ref ObjectReference
 	result := newRelationshipMap()
 
 	// RelationshipClusterRoleBindingSubject
-	// TODO: Handle non-object type subjects such as user & group names
 	for _, s := range crb.Subjects {
-		ref = ObjectReference{Group: s.APIGroup, Kind: s.Kind, Namespace: s.Namespace, Name: s.Name}
-		result.AddDependentByKey(ref.Key(), RelationshipClusterRoleBindingSubject)
+		switch s.Kind {
+		case rbacv1.ServiceAccountKind:
+			if s.APIGroup == corev1.GroupName && s.Namespace != "" {
+				ref = ObjectReference{Kind: "ServiceAccount", Namespace: s.Namespace, Name: s.Name}
+				result.AddDependentByKey(ref.Key(), RelationshipClusterRoleBindingSubject)
+			}
+		case rbacv1.GroupKind:
+			if s.APIGroup == rbacv1.GroupName && s.Namespace == "" {
+				switch {
+				// All ServiceAccounts in any namespace (authenticated users)
+				case s.Name == user.AllAuthenticated:
+					os = ObjectSelector{Kind: "ServiceAccount"}
+					result.AddDependentBySelector(os, RelationshipClusterRoleBindingSubject)
+				// All ServiceAccounts in any namespace
+				case s.Name == serviceaccount.AllServiceAccountsGroup:
+					os = ObjectSelector{Kind: "ServiceAccount"}
+					result.AddDependentBySelector(os, RelationshipClusterRoleBindingSubject)
+				// All ServiceAccounts in the namespace (extracted from the SA group)
+				case strings.HasPrefix(s.Name, serviceaccount.ServiceAccountGroupPrefix):
+					sns := s.Name[len(serviceaccount.ServiceAccountGroupPrefix):]
+					os = ObjectSelector{Kind: "ServiceAccount", Namespaces: sets.NewString(sns)}
+					result.AddDependentBySelector(os, RelationshipClusterRoleBindingSubject)
+				}
+			}
+		case rbacv1.UserKind:
+			if s.APIGroup == rbacv1.GroupName && s.Namespace == "" {
+				ns, sa, err := serviceaccount.SplitUsername(s.Name)
+				if err == nil {
+					ref = ObjectReference{Kind: "ServiceAccount", Namespace: ns, Name: sa}
+					result.AddDependentByKey(ref.Key(), RelationshipClusterRoleBindingSubject)
+				}
+			}
+		}
 	}
 
 	// RelationshipClusterRoleBindingRole
@@ -733,8 +765,8 @@ func getRoleRelationships(n *Node) (*RelationshipMap, error) {
 	if err != nil {
 		return nil, err
 	}
-	var os ObjectSelector
 
+	var os ObjectSelector
 	var ref ObjectReference
 	result := newRelationshipMap()
 
@@ -767,15 +799,46 @@ func getRoleBindingRelationships(n *Node) (*RelationshipMap, error) {
 		return nil, err
 	}
 
+	var os ObjectSelector
 	var ref ObjectReference
 	ns := rb.Namespace
 	result := newRelationshipMap()
 
 	// RelationshipRoleBindingSubject
-	// TODO: Handle non-object type subjects such as user & group names
 	for _, s := range rb.Subjects {
-		ref = ObjectReference{Group: s.APIGroup, Kind: s.Kind, Namespace: s.Namespace, Name: s.Name}
-		result.AddDependentByKey(ref.Key(), RelationshipRoleBindingSubject)
+		switch s.Kind {
+		case rbacv1.ServiceAccountKind:
+			if s.APIGroup == corev1.GroupName && s.Namespace != "" {
+				ref = ObjectReference{Kind: "ServiceAccount", Namespace: s.Namespace, Name: s.Name}
+				result.AddDependentByKey(ref.Key(), RelationshipRoleBindingSubject)
+			}
+		case rbacv1.GroupKind:
+			if s.APIGroup == rbacv1.GroupName && s.Namespace == "" {
+				switch {
+				// All ServiceAccounts in the RoleBinding namespace (authenticated users)
+				case s.Name == user.AllAuthenticated:
+					os = ObjectSelector{Kind: "ServiceAccount", Namespaces: sets.NewString(ns)}
+					result.AddDependentBySelector(os, RelationshipRoleBindingSubject)
+				// All ServiceAccounts in the RoleBinding namespace
+				case s.Name == serviceaccount.AllServiceAccountsGroup:
+					os = ObjectSelector{Kind: "ServiceAccount", Namespaces: sets.NewString(ns)}
+					result.AddDependentBySelector(os, RelationshipRoleBindingSubject)
+				// All ServiceAccounts in the namespace (extracted from the SA group)
+				case strings.HasPrefix(s.Name, serviceaccount.ServiceAccountGroupPrefix):
+					sns := s.Name[len(serviceaccount.ServiceAccountGroupPrefix):]
+					os = ObjectSelector{Kind: "ServiceAccount", Namespaces: sets.NewString(sns)}
+					result.AddDependentBySelector(os, RelationshipRoleBindingSubject)
+				}
+			}
+		case rbacv1.UserKind:
+			if s.APIGroup == rbacv1.GroupName && s.Namespace == "" {
+				ns, sa, err := serviceaccount.SplitUsername(s.Name)
+				if err == nil {
+					ref = ObjectReference{Kind: "ServiceAccount", Namespace: ns, Name: sa}
+					result.AddDependentByKey(ref.Key(), RelationshipRoleBindingSubject)
+				}
+			}
+		}
 	}
 
 	// RelationshipRoleBindingRole
