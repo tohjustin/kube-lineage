@@ -193,6 +193,7 @@ func getClusterRoleRelationships(n *Node) (*RelationshipMap, error) {
 // getClusterRoleBindingRelationships returns a map of relationships that this
 // ClusterRoleBinding has with other objects, based on what was referenced in
 // its manifest.
+//nolint:gocognit
 func getClusterRoleBindingRelationships(n *Node) (*RelationshipMap, error) {
 	var crb rbacv1.ClusterRoleBinding
 	err := runtime.DefaultUnstructuredConverter.FromUnstructured(n.UnstructuredContent(), &crb)
@@ -243,8 +244,10 @@ func getClusterRoleBindingRelationships(n *Node) (*RelationshipMap, error) {
 
 	// RelationshipClusterRoleBindingRole
 	r := crb.RoleRef
-	ref = ObjectReference{Group: r.APIGroup, Kind: r.Kind, Name: r.Name}
-	result.AddDependencyByKey(ref.Key(), RelationshipClusterRoleBindingRole)
+	if r.APIGroup == rbacv1.GroupName && r.Kind == "ClusterRole" {
+		ref = ObjectReference{Group: rbacv1.GroupName, Kind: "ClusterRole", Name: r.Name}
+		result.AddDependencyByKey(ref.Key(), RelationshipRoleBindingRole)
+	}
 
 	return &result, nil
 }
@@ -792,6 +795,7 @@ func getRoleRelationships(n *Node) (*RelationshipMap, error) {
 // getRoleBindingRelationships returns a map of relationships that this
 // RoleBinding has with other objects, based on what was referenced in its
 // manifest.
+//nolint:funlen,gocognit
 func getRoleBindingRelationships(n *Node) (*RelationshipMap, error) {
 	var rb rbacv1.RoleBinding
 	err := runtime.DefaultUnstructuredConverter.FromUnstructured(n.UnstructuredContent(), &rb)
@@ -842,9 +846,16 @@ func getRoleBindingRelationships(n *Node) (*RelationshipMap, error) {
 	}
 
 	// RelationshipRoleBindingRole
-	r := rb.RoleRef
-	ref = ObjectReference{Group: r.APIGroup, Kind: r.Kind, Namespace: ns, Name: r.Name}
-	result.AddDependencyByKey(ref.Key(), RelationshipRoleBindingRole)
+	if r := rb.RoleRef; r.APIGroup == rbacv1.GroupName {
+		switch r.Kind {
+		case "ClusterRole":
+			ref = ObjectReference{Group: rbacv1.GroupName, Kind: "ClusterRole", Name: r.Name}
+			result.AddDependencyByKey(ref.Key(), RelationshipRoleBindingRole)
+		case "Role":
+			ref = ObjectReference{Group: rbacv1.GroupName, Kind: "Role", Namespace: ns, Name: r.Name}
+			result.AddDependencyByKey(ref.Key(), RelationshipRoleBindingRole)
+		}
+	}
 
 	return &result, nil
 }
