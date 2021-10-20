@@ -18,6 +18,7 @@ import (
 	"k8s.io/cli-runtime/pkg/resource"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
+	_ "k8s.io/client-go/plugin/pkg/client/auth" //nolint:gci
 	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
 )
