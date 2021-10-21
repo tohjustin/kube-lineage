@@ -108,10 +108,15 @@ func NewCmd(streams genericclioptions.IOStreams, name, parentCmdPath string) *co
 		},
 	}
 
+	// Setup flags
 	o.Flags.AddFlags(cmd.Flags())
 	o.ClientFlags.AddFlags(cmd.Flags())
 	o.PrintFlags.AddFlags(cmd.Flags())
 	log.AddFlags(cmd.Flags())
+
+	// Setup flag completion function
+	o.Flags.RegisterFlagCompletionFunc(cmd, f)
+	o.ClientFlags.RegisterFlagCompletionFunc(cmd, f)
 
 	return cmd
 }
