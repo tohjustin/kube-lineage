@@ -39,7 +39,7 @@ var (
 	}
 	// objectReadyReasonJSONPath is the JSON path to get a Kubernetes object's
 	// "Ready" condition reason.
-	objectReadyReasonJSONPath = newJSONPath("status", "{.status.conditions[?(@.type==\"Ready\")].reason}")
+	objectReadyReasonJSONPath = newJSONPath("reason", "{.status.conditions[?(@.type==\"Ready\")].reason}")
 	// objectReadyStatusJSONPath is the JSON path to get a Kubernetes object's
 	// "Ready" condition status.
 	objectReadyStatusJSONPath = newJSONPath("status", "{.status.conditions[?(@.type==\"Ready\")].status}")
