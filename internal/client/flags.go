@@ -18,8 +18,8 @@ func (f *Flags) Copy() Flags {
 	return Flags
 }
 
-// AddFlags receives a *cobra.Command reference and binds flags related to
-// client configuration to it.
+// AddFlags receives a pflag.FlagSet reference and binds flags related to client
+// configuration to it.
 func (f *Flags) AddFlags(flags *pflag.FlagSet) {
 	f.ConfigFlags.AddFlags(flags)
 }

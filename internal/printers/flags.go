@@ -21,7 +21,7 @@ type Flags struct {
 	OutputFormat       *string
 }
 
-// AddFlags receives a *cobra.Command reference and binds flags related to
+// AddFlags receives a *pflag.FlagSet reference and binds flags related to
 // human-readable printing to it.
 func (f *Flags) AddFlags(flags *pflag.FlagSet) {
 	f.HumanReadableFlags.AddFlags(flags)

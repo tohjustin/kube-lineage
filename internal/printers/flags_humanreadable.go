@@ -115,7 +115,7 @@ func (f *HumanPrintFlags) ToPrinter(outputFormat string) (printers.ResourcePrint
 	return f.ToPrinterWithGK(outputFormat, schema.GroupKind{})
 }
 
-// AddFlags receives a *cobra.Command reference and binds flags related to
+// AddFlags receives a *pflag.FlagSet reference and binds flags related to
 // human-readable printing to it.
 func (f *HumanPrintFlags) AddFlags(flags *pflag.FlagSet) {
 	if f.ColumnLabels != nil {

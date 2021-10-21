@@ -26,7 +26,7 @@ func (f *Flags) Copy() Flags {
 	return Flags
 }
 
-// AddFlags receives a *cobra.Command reference and binds flags related to
+// AddFlags receives a *pflag.FlagSet reference and binds flags related to
 // configuration to it.
 func (f *Flags) AddFlags(flags *pflag.FlagSet) {
 	if f.AllNamespaces != nil {
