@@ -50,6 +50,7 @@ type Interface interface {
 	ResolveAPIResource(s string) (*APIResource, error)
 
 	Get(ctx context.Context, name string, opts GetOptions) (*unstructuredv1.Unstructured, error)
+	GetAPIResources(ctx context.Context) ([]APIResource, error)
 	GetTable(ctx context.Context, opts GetTableOptions) (*metav1.Table, error)
 	List(ctx context.Context, opts ListOptions) (*unstructuredv1.UnstructuredList, error)
 }
@@ -219,7 +220,7 @@ func (c *client) List(ctx context.Context, opts ListOptions) (*unstructuredv1.Un
 	var err error
 	apis := opts.APIResources
 	if len(apis) == 0 {
-		apis, err = c.getAPIResources(ctx)
+		apis, err = c.GetAPIResources(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -301,8 +302,8 @@ func (c *client) List(ctx context.Context, opts ListOptions) (*unstructuredv1.Un
 	return &unstructuredv1.UnstructuredList{Items: items}, nil
 }
 
-// getAPIResources returns all API resource registered on the server.
-func (c *client) getAPIResources(_ context.Context) ([]APIResource, error) {
+// GetAPIResources returns all API resource registered on the server.
+func (c *client) GetAPIResources(_ context.Context) ([]APIResource, error) {
 	rls, err := c.discoveryClient.ServerPreferredResources()
 	if err != nil {
 		return nil, err
