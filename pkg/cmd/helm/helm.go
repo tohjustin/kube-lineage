@@ -18,6 +18,7 @@ import (
 	"k8s.io/cli-runtime/pkg/resource"
 	"k8s.io/klog/v2"
 	cmdutil "k8s.io/kubectl/pkg/cmd/util"
+	"k8s.io/kubectl/pkg/util"
 	"k8s.io/kubectl/pkg/util/templates"
 
 	"github.com/tohjustin/kube-lineage/internal/client"
@@ -73,6 +74,9 @@ func NewCmd(streams genericclioptions.IOStreams, name, parentCmdPath string) *co
 		IOStreams:   streams,
 	}
 
+	f := cmdutil.NewFactory(o.ClientFlags)
+	util.SetFactoryForCompletion(f)
+
 	if len(name) > 0 {
 		cmdName = name
 	}
@@ -95,6 +99,13 @@ func NewCmd(streams genericclioptions.IOStreams, name, parentCmdPath string) *co
 			cmdutil.CheckErr(o.Validate())
 			cmdutil.CheckErr(o.Run())
 		},
+		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			var comp []string
+			if len(args) == 0 {
+				comp = compGetHelmReleaseList(o, toComplete)
+			}
+			return comp, cobra.ShellCompDirectiveNoFileComp
+		},
 	}
 
 	o.Flags.AddFlags(cmd.Flags())
@@ -108,11 +119,11 @@ func NewCmd(streams genericclioptions.IOStreams, name, parentCmdPath string) *co
 // Complete completes all the required options for command.
 func (o *CmdOptions) Complete(cmd *cobra.Command, args []string) error {
 	var err error
+
+	//nolint:gocritic
 	switch len(args) {
 	case 1:
 		o.RequestRelease = args[0]
-	default:
-		return fmt.Errorf("release name must be specified\nSee '%s -h' for help and examples", cmdPath)
 	}
 
 	// Setup client
@@ -143,11 +154,7 @@ func (o *CmdOptions) Complete(cmd *cobra.Command, args []string) error {
 // Validate validates all the required options for the helm command.
 func (o *CmdOptions) Validate() error {
 	if len(o.RequestRelease) == 0 {
-		return fmt.Errorf("release NAME must be specified")
-	}
-
-	if o.Client == nil {
-		return fmt.Errorf("client must be provided")
+		return fmt.Errorf("release name must be specified\nSee '%s -h' for help and examples", cmdPath)
 	}
 
 	klog.V(4).Infof("Namespace: %s", o.Namespace)
