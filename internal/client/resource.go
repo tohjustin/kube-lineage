@@ -33,6 +33,13 @@ func (r APIResource) String() string {
 	return fmt.Sprintf("%s.%s.%s", r.Name, r.Version, r.Group)
 }
 
+func (r APIResource) WithGroupString() string {
+	if len(r.Group) == 0 {
+		return r.Name
+	}
+	return r.Name + "." + r.Group
+}
+
 // ObjectMeta contains the metadata for identifying a Kubernetes object.
 type ObjectMeta struct {
 	APIResource

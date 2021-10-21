@@ -9,7 +9,9 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/klog/v2"
+	"k8s.io/kubectl/pkg/cmd/get"
 	cmdutil "k8s.io/kubectl/pkg/cmd/util"
+	"k8s.io/kubectl/pkg/util"
 	"k8s.io/kubectl/pkg/util/templates"
 
 	"github.com/tohjustin/kube-lineage/internal/client"
@@ -66,6 +68,9 @@ func NewCmd(streams genericclioptions.IOStreams, name, parentCmdPath string) *co
 		IOStreams:   streams,
 	}
 
+	f := cmdutil.NewFactory(o.ClientFlags)
+	util.SetFactoryForCompletion(f)
+
 	if len(name) > 0 {
 		cmdName = name
 	}
@@ -88,6 +93,16 @@ func NewCmd(streams genericclioptions.IOStreams, name, parentCmdPath string) *co
 			cmdutil.CheckErr(o.Validate())
 			cmdutil.CheckErr(o.Run())
 		},
+		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			var comps []string
+			switch len(args) {
+			case 0:
+				comps = compGetResourceList(o, toComplete)
+			case 1:
+				comps = get.CompGetResource(f, cmd, args[0], toComplete)
+			}
+			return comps, cobra.ShellCompDirectiveNoFileComp
+		},
 	}
 
 	o.Flags.AddFlags(cmd.Flags())
@@ -101,6 +116,7 @@ func NewCmd(streams genericclioptions.IOStreams, name, parentCmdPath string) *co
 // Complete completes all the required options for command.
 func (o *CmdOptions) Complete(cmd *cobra.Command, args []string) error {
 	var err error
+
 	switch len(args) {
 	case 1:
 		resourceTokens := strings.SplitN(args[0], "/", 2)
@@ -112,8 +128,6 @@ func (o *CmdOptions) Complete(cmd *cobra.Command, args []string) error {
 	case 2:
 		o.RequestType = args[0]
 		o.RequestName = args[1]
-	default:
-		return fmt.Errorf("resource must be specified as <resource> <name> or <resource>/<name>\nSee '%s -h' for help and examples", cmdPath)
 	}
 
 	// Setup client
@@ -138,11 +152,7 @@ func (o *CmdOptions) Complete(cmd *cobra.Command, args []string) error {
 // Validate validates all the required options for the lineage command.
 func (o *CmdOptions) Validate() error {
 	if len(o.RequestType) == 0 || len(o.RequestName) == 0 {
-		return fmt.Errorf("resource TYPE & NAME must be specified")
-	}
-
-	if o.Client == nil {
-		return fmt.Errorf("client must be provided")
+		return fmt.Errorf("resource must be specified as <resource> <name> or <resource>/<name>\nSee '%s -h' for help and examples", cmdPath)
 	}
 
 	klog.V(4).Infof("Namespace: %s", o.Namespace)
