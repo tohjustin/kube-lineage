@@ -18,13 +18,14 @@ builds:
     env:
       - CGO_ENABLED=0
     ldflags:
-      - -s -w
-      - -X github.com/tohjustin/kube-lineage/internal/version.gitMajor={{ .Env.GIT_VERSION_MAJOR }}
-      - -X github.com/tohjustin/kube-lineage/internal/version.gitMinor={{ .Env.GIT_VERSION_MINOR }}
-      - -X github.com/tohjustin/kube-lineage/internal/version.gitVersion={{ .Env.GIT_VERSION }}
+      - -s
+      - -w
+      - -X github.com/tohjustin/kube-lineage/internal/version.buildDate={{ .Env.BUILD_DATE }}
       - -X github.com/tohjustin/kube-lineage/internal/version.gitCommit={{ .Env.GIT_COMMIT }}
       - -X github.com/tohjustin/kube-lineage/internal/version.gitTreeState={{ .Env.GIT_TREE_STATE }}
-      - -X github.com/tohjustin/kube-lineage/internal/version.buildDate={{ .Env.BUILD_DATE }}
+      - -X github.com/tohjustin/kube-lineage/internal/version.gitVersion={{ .Env.GIT_VERSION }}
+      - -X github.com/tohjustin/kube-lineage/internal/version.gitVersionMajor={{ .Env.GIT_VERSION_MAJOR }}
+      - -X github.com/tohjustin/kube-lineage/internal/version.gitVersionMinor={{ .Env.GIT_VERSION_MINOR }}
 archives:
   - files:
       - LICENSE.md
