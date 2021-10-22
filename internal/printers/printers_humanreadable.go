@@ -498,15 +498,17 @@ func nodeToTableRow(node *graph.Node, rset graph.RelationshipSet, namePrefix str
 	}
 }
 
-// nodeMapToTable converts the provided node & its dependents into table rows.
+// nodeMapToTable converts the provided node & either its dependencies or
+// dependents into table rows.
 func nodeMapToTable(
 	nodeMap graph.NodeMap,
 	root *graph.Node,
 	maxDepth uint,
+	depsIsDependencies bool,
 	showGroupFn func(kind string) bool) (*metav1.Table, error) {
 	// Sorts the list of UIDs based on the underlying object in following order:
 	// Namespace, Kind, Group, Name
-	sortDependentsFn := func(d map[types.UID]graph.RelationshipSet) []types.UID {
+	sortDepsFn := func(d map[types.UID]graph.RelationshipSet) []types.UID {
 		nodes, ix := make(graph.NodeList, len(d)), 0
 		for uid := range d {
 			nodes[ix] = nodeMap[uid]
@@ -523,12 +525,12 @@ func nodeMapToTable(
 	var rows []metav1.TableRow
 	row := nodeToTableRow(root, nil, "", showGroupFn)
 	uidSet := map[types.UID]struct{}{}
-	dependentRows, err := nodeDependentsToTableRows(nodeMap, uidSet, root, "", 1, maxDepth, sortDependentsFn, showGroupFn)
+	depRows, err := nodeDepsToTableRows(nodeMap, uidSet, root, "", 1, maxDepth, depsIsDependencies, sortDepsFn, showGroupFn)
 	if err != nil {
 		return nil, err
 	}
 	rows = append(rows, row)
-	rows = append(rows, dependentRows...)
+	rows = append(rows, depRows...)
 	table := metav1.Table{
 		ColumnDefinitions: objectColumnDefinitions,
 		Rows:              rows,
@@ -537,51 +539,53 @@ func nodeMapToTable(
 	return &table, nil
 }
 
-// nodeDependentsToTableRows converts the dependents of the provided node into
-// table rows.
-func nodeDependentsToTableRows(
+// nodeDepsToTableRows converts either the dependencies or dependents of the
+// provided node into table rows.
+func nodeDepsToTableRows(
 	nodeMap graph.NodeMap,
 	uidSet map[types.UID]struct{},
 	node *graph.Node,
 	prefix string,
 	depth uint,
 	maxDepth uint,
-	sortDependentsFn func(d map[types.UID]graph.RelationshipSet) []types.UID,
+	depsIsDependencies bool,
+	sortDepsFn func(d map[types.UID]graph.RelationshipSet) []types.UID,
 	showGroupFn func(kind string) bool) ([]metav1.TableRow, error) {
 	rows := make([]metav1.TableRow, 0, len(nodeMap))
 
-	// Guard against possible cyclic dependency
+	// Guard against possible cycles
 	if _, ok := uidSet[node.UID]; ok {
 		return rows, nil
 	}
 	uidSet[node.UID] = struct{}{}
 
-	dependents := sortDependentsFn(node.Dependents)
-	lastIx := len(dependents) - 1
-	for ix, childUID := range dependents {
-		var childPrefix, dependentPrefix string
+	deps := node.GetDeps(depsIsDependencies)
+	depUIDs := sortDepsFn(deps)
+	lastIx := len(depUIDs) - 1
+	for ix, childUID := range depUIDs {
+		var childPrefix, depPrefix string
 		if ix != lastIx {
-			childPrefix, dependentPrefix = prefix+"├── ", prefix+"│   "
+			childPrefix, depPrefix = prefix+"├── ", prefix+"│   "
 		} else {
-			childPrefix, dependentPrefix = prefix+"└── ", prefix+"    "
+			childPrefix, depPrefix = prefix+"└── ", prefix+"    "
 		}
 
 		child, ok := nodeMap[childUID]
 		if !ok {
 			return nil, fmt.Errorf("dependent object (uid: %s) not found in list of fetched objects", childUID)
 		}
-		rset, ok := node.Dependents[childUID]
+		rset, ok := deps[childUID]
 		if !ok {
 			return nil, fmt.Errorf("dependent object (uid: %s) not found", childUID)
 		}
 		row := nodeToTableRow(child, rset, childPrefix, showGroupFn)
 		rows = append(rows, row)
 		if maxDepth == 0 || depth < maxDepth {
-			dependentRows, err := nodeDependentsToTableRows(nodeMap, uidSet, child, dependentPrefix, depth+1, maxDepth, sortDependentsFn, showGroupFn)
+			depRows, err := nodeDepsToTableRows(nodeMap, uidSet, child, depPrefix, depth+1, maxDepth, depsIsDependencies, sortDepsFn, showGroupFn)
 			if err != nil {
 				return nil, err
 			}
-			rows = append(rows, dependentRows...)
+			rows = append(rows, depRows...)
 		}
 	}
 

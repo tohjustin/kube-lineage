@@ -206,8 +206,16 @@ type Node struct {
 	Namespace       string
 	Name            string
 	OwnerReferences []metav1.OwnerReference
+	Dependencies    map[types.UID]RelationshipSet
 	Dependents      map[types.UID]RelationshipSet
 	Depth           uint
+}
+
+func (n *Node) AddDependency(uid types.UID, r Relationship) {
+	if _, ok := n.Dependencies[uid]; !ok {
+		n.Dependencies[uid] = RelationshipSet{}
+	}
+	n.Dependencies[uid][r] = struct{}{}
 }
 
 func (n *Node) AddDependent(uid types.UID, r Relationship) {
@@ -215,6 +223,13 @@ func (n *Node) AddDependent(uid types.UID, r Relationship) {
 		n.Dependents[uid] = RelationshipSet{}
 	}
 	n.Dependents[uid][r] = struct{}{}
+}
+
+func (n *Node) GetDeps(depsIsDependencies bool) map[types.UID]RelationshipSet {
+	if depsIsDependencies {
+		return n.Dependencies
+	}
+	return n.Dependents
 }
 
 func (n *Node) GetObjectReferenceKey() ObjectReferenceKey {
@@ -276,10 +291,22 @@ func (n NodeList) Swap(i, j int) {
 // NodeMap contains a relationship tree stored as a map of nodes.
 type NodeMap map[types.UID]*Node
 
+// ResolveDependencies resolves all dependencies of the provided objects and
+// returns a relationship tree.
+func ResolveDependencies(m meta.RESTMapper, objects []unstructuredv1.Unstructured, uids []types.UID) (NodeMap, error) {
+	return resolveDeps(m, objects, uids, true)
+}
+
 // ResolveDependents resolves all dependents of the provided objects and returns
 // a relationship tree.
-//nolint:funlen,gocognit,gocyclo
 func ResolveDependents(m meta.RESTMapper, objects []unstructuredv1.Unstructured, uids []types.UID) (NodeMap, error) {
+	return resolveDeps(m, objects, uids, false)
+}
+
+// resolveDeps resolves all dependencies or dependents of the provided objects
+// and returns a relationship tree.
+//nolint:funlen,gocognit,gocyclo
+func resolveDeps(m meta.RESTMapper, objects []unstructuredv1.Unstructured, uids []types.UID, depsIsDependencies bool) (NodeMap, error) {
 	if len(uids) == 0 {
 		return NodeMap{}, nil
 	}
@@ -307,6 +334,7 @@ func ResolveDependents(m meta.RESTMapper, objects []unstructuredv1.Unstructured,
 			Kind:            m.GroupVersionKind.Kind,
 			Resource:        m.Resource.Resource,
 			OwnerReferences: o.GetOwnerReferences(),
+			Dependencies:    map[types.UID]RelationshipSet{},
 			Dependents:      map[types.UID]RelationshipSet{},
 		}
 		uid, key := node.UID, node.GetObjectReferenceKey()
@@ -356,6 +384,7 @@ func ResolveDependents(m meta.RESTMapper, objects []unstructuredv1.Unstructured,
 		for k, rset := range rmap.DependenciesByRef {
 			if n, ok := globalMapByKey[k]; ok {
 				for r := range rset {
+					node.AddDependency(n.UID, r)
 					n.AddDependent(node.UID, r)
 				}
 			}
@@ -363,6 +392,7 @@ func ResolveDependents(m meta.RESTMapper, objects []unstructuredv1.Unstructured,
 		for k, rset := range rmap.DependentsByRef {
 			if n, ok := globalMapByKey[k]; ok {
 				for r := range rset {
+					n.AddDependency(node.UID, r)
 					node.AddDependent(n.UID, r)
 				}
 			}
@@ -371,6 +401,7 @@ func ResolveDependents(m meta.RESTMapper, objects []unstructuredv1.Unstructured,
 			if ols, ok := rmap.ObjectLabelSelectors[k]; ok {
 				for _, n := range resolveLabelSelectorToNodes(ols) {
 					for r := range rset {
+						node.AddDependency(n.UID, r)
 						n.AddDependent(node.UID, r)
 					}
 				}
@@ -380,6 +411,7 @@ func ResolveDependents(m meta.RESTMapper, objects []unstructuredv1.Unstructured,
 			if ols, ok := rmap.ObjectLabelSelectors[k]; ok {
 				for _, n := range resolveLabelSelectorToNodes(ols) {
 					for r := range rset {
+						n.AddDependency(node.UID, r)
 						node.AddDependent(n.UID, r)
 					}
 				}
@@ -389,6 +421,7 @@ func ResolveDependents(m meta.RESTMapper, objects []unstructuredv1.Unstructured,
 			if os, ok := rmap.ObjectSelectors[k]; ok {
 				for _, n := range resolveSelectorToNodes(os) {
 					for r := range rset {
+						node.AddDependency(n.UID, r)
 						n.AddDependent(node.UID, r)
 					}
 				}
@@ -398,6 +431,7 @@ func ResolveDependents(m meta.RESTMapper, objects []unstructuredv1.Unstructured,
 			if os, ok := rmap.ObjectSelectors[k]; ok {
 				for _, n := range resolveSelectorToNodes(os) {
 					for r := range rset {
+						n.AddDependency(node.UID, r)
 						node.AddDependent(n.UID, r)
 					}
 				}
@@ -406,6 +440,7 @@ func ResolveDependents(m meta.RESTMapper, objects []unstructuredv1.Unstructured,
 		for uid, rset := range rmap.DependenciesByUID {
 			if n, ok := globalMapByUID[uid]; ok {
 				for r := range rset {
+					node.AddDependency(n.UID, r)
 					n.AddDependent(node.UID, r)
 				}
 			}
@@ -413,19 +448,22 @@ func ResolveDependents(m meta.RESTMapper, objects []unstructuredv1.Unstructured,
 		for uid, rset := range rmap.DependentsByUID {
 			if n, ok := globalMapByUID[uid]; ok {
 				for r := range rset {
+					n.AddDependency(node.UID, r)
 					node.AddDependent(n.UID, r)
 				}
 			}
 		}
 	}
 
-	// Populate dependents based on Owner-Dependent relationships
+	// Populate dependencies & dependents based on Owner-Dependent relationships
 	for _, node := range globalMapByUID {
 		for _, ref := range node.OwnerReferences {
 			if n, ok := globalMapByUID[ref.UID]; ok {
 				if ref.Controller != nil && *ref.Controller {
+					node.AddDependency(n.UID, RelationshipControllerRef)
 					n.AddDependent(node.UID, RelationshipControllerRef)
 				}
+				node.AddDependency(n.UID, RelationshipOwnerRef)
 				n.AddDependent(node.UID, RelationshipOwnerRef)
 			}
 		}
@@ -435,161 +473,161 @@ func ResolveDependents(m meta.RESTMapper, objects []unstructuredv1.Unstructured,
 	var err error
 	for _, node := range globalMapByUID {
 		switch {
-		// Populate dependents based on PersistentVolume relationships
+		// Populate dependencies & dependents based on PersistentVolume relationships
 		case node.Group == corev1.GroupName && node.Kind == "PersistentVolume":
 			rmap, err = getPersistentVolumeRelationships(node)
 			if err != nil {
 				klog.V(4).Infof("Failed to get relationships for persistentvolume named \"%s\": %s", node.Name, err)
 				continue
 			}
-		// Populate dependents based on PersistentVolumeClaim relationships
+		// Populate dependencies & dependents based on PersistentVolumeClaim relationships
 		case node.Group == corev1.GroupName && node.Kind == "PersistentVolumeClaim":
 			rmap, err = getPersistentVolumeClaimRelationships(node)
 			if err != nil {
 				klog.V(4).Infof("Failed to get relationships for persistentvolumeclaim named \"%s\" in namespace \"%s\": %s", node.Name, node.Namespace, err)
 				continue
 			}
-		// Populate dependents based on Pod relationships
+		// Populate dependencies & dependents based on Pod relationships
 		case node.Group == corev1.GroupName && node.Kind == "Pod":
 			rmap, err = getPodRelationships(node)
 			if err != nil {
 				klog.V(4).Infof("Failed to get relationships for pod named \"%s\" in namespace \"%s\": %s", node.Name, node.Namespace, err)
 				continue
 			}
-		// Populate dependents based on Service relationships
+		// Populate dependencies & dependents based on Service relationships
 		case node.Group == corev1.GroupName && node.Kind == "Service":
 			rmap, err = getServiceRelationships(node)
 			if err != nil {
 				klog.V(4).Infof("Failed to get relationships for service named \"%s\" in namespace \"%s\": %s", node.Name, node.Namespace, err)
 				continue
 			}
-		// Populate dependents based on ServiceAccount relationships
+		// Populate dependencies & dependents based on ServiceAccount relationships
 		case node.Group == corev1.GroupName && node.Kind == "ServiceAccount":
 			rmap, err = getServiceAccountRelationships(node)
 			if err != nil {
 				klog.V(4).Infof("Failed to get relationships for serviceaccount named \"%s\" in namespace \"%s\": %s", node.Name, node.Namespace, err)
 				continue
 			}
-		// Populate dependents based on PodSecurityPolicy relationships
+		// Populate dependencies & dependents based on PodSecurityPolicy relationships
 		case node.Group == policyv1beta1.GroupName && node.Kind == "PodSecurityPolicy":
 			rmap, err = getPodSecurityPolicyRelationships(node)
 			if err != nil {
 				klog.V(4).Infof("Failed to get relationships for podsecuritypolicy named \"%s\": %s", node.Name, err)
 				continue
 			}
-		// Populate dependents based on PodDisruptionBudget relationships
+		// Populate dependencies & dependents based on PodDisruptionBudget relationships
 		case node.Group == policyv1.GroupName && node.Kind == "PodDisruptionBudget":
 			rmap, err = getPodDisruptionBudgetRelationships(node)
 			if err != nil {
 				klog.V(4).Infof("Failed to get relationships for poddisruptionbudget named \"%s\": %s", node.Name, err)
 				continue
 			}
-		// Populate dependents based on MutatingWebhookConfiguration relationships
+		// Populate dependencies & dependents based on MutatingWebhookConfiguration relationships
 		case node.Group == admissionregistrationv1.GroupName && node.Kind == "MutatingWebhookConfiguration":
 			rmap, err = getMutatingWebhookConfigurationRelationships(node)
 			if err != nil {
 				klog.V(4).Infof("Failed to get relationships for mutatingwebhookconfiguration named \"%s\": %s", node.Name, err)
 				continue
 			}
-		// Populate dependents based on ValidatingWebhookConfiguration relationships
+		// Populate dependencies & dependents based on ValidatingWebhookConfiguration relationships
 		case node.Group == admissionregistrationv1.GroupName && node.Kind == "ValidatingWebhookConfiguration":
 			rmap, err = getValidatingWebhookConfigurationRelationships(node)
 			if err != nil {
 				klog.V(4).Infof("Failed to get relationships for validatingwebhookconfiguration named \"%s\": %s", node.Name, err)
 				continue
 			}
-		// Populate dependents based on APIService relationships
+		// Populate dependencies & dependents based on APIService relationships
 		case node.Group == apiregistrationv1.GroupName && node.Kind == "APIService":
 			rmap, err = getAPIServiceRelationships(node)
 			if err != nil {
 				klog.V(4).Infof("Failed to get relationships for apiservice named \"%s\": %s", node.Name, err)
 				continue
 			}
-		// Populate dependents based on Event relationships
+		// Populate dependencies & dependents based on Event relationships
 		case (node.Group == eventsv1.GroupName || node.Group == corev1.GroupName) && node.Kind == "Event":
 			rmap, err = getEventRelationships(node)
 			if err != nil {
 				klog.V(4).Infof("Failed to get relationships for event named \"%s\" in namespace \"%s\": %s", node.Name, node.Namespace, err)
 				continue
 			}
-		// Populate dependents based on Ingress relationships
+		// Populate dependencies & dependents based on Ingress relationships
 		case (node.Group == networkingv1.GroupName || node.Group == extensionsv1beta1.GroupName) && node.Kind == "Ingress":
 			rmap, err = getIngressRelationships(node)
 			if err != nil {
 				klog.V(4).Infof("Failed to get relationships for ingress named \"%s\" in namespace \"%s\": %s", node.Name, node.Namespace, err)
 				continue
 			}
-		// Populate dependents based on IngressClass relationships
+		// Populate dependencies & dependents based on IngressClass relationships
 		case node.Group == networkingv1.GroupName && node.Kind == "IngressClass":
 			rmap, err = getIngressClassRelationships(node)
 			if err != nil {
 				klog.V(4).Infof("Failed to get relationships for ingressclass named \"%s\": %s", node.Name, err)
 				continue
 			}
-		// Populate dependents based on NetworkPolicy relationships
+		// Populate dependencies & dependents based on NetworkPolicy relationships
 		case node.Group == networkingv1.GroupName && node.Kind == "NetworkPolicy":
 			rmap, err = getNetworkPolicyRelationships(node)
 			if err != nil {
 				klog.V(4).Infof("Failed to get relationships for networkpolicy named \"%s\": %s", node.Name, err)
 				continue
 			}
-		// Populate dependents based on RuntimeClass relationships
+		// Populate dependencies & dependents based on RuntimeClass relationships
 		case node.Group == nodev1.GroupName && node.Kind == "RuntimeClass":
 			rmap, err = getRuntimeClassRelationships(node)
 			if err != nil {
 				klog.V(4).Infof("Failed to get relationships for runtimeclass named \"%s\": %s", node.Name, err)
 				continue
 			}
-		// Populate dependents based on ClusterRole relationships
+		// Populate dependencies & dependents based on ClusterRole relationships
 		case node.Group == rbacv1.GroupName && node.Kind == "ClusterRole":
 			rmap, err = getClusterRoleRelationships(node)
 			if err != nil {
 				klog.V(4).Infof("Failed to get relationships for clusterrole named \"%s\": %s", node.Name, err)
 				continue
 			}
-		// Populate dependents based on ClusterRoleBinding relationships
+		// Populate dependencies & dependents based on ClusterRoleBinding relationships
 		case node.Group == rbacv1.GroupName && node.Kind == "ClusterRoleBinding":
 			rmap, err = getClusterRoleBindingRelationships(node)
 			if err != nil {
 				klog.V(4).Infof("Failed to get relationships for clusterrolebinding named \"%s\": %s", node.Name, err)
 				continue
 			}
-		// Populate dependents based on Role relationships
+		// Populate dependencies & dependents based on Role relationships
 		case node.Group == rbacv1.GroupName && node.Kind == "Role":
 			rmap, err = getRoleRelationships(node)
 			if err != nil {
 				klog.V(4).Infof("Failed to get relationships for role named \"%s\" in namespace \"%s\": %s: %s", node.Name, node.Namespace, err)
 				continue
 			}
-		// Populate dependents based on RoleBinding relationships
+		// Populate dependencies & dependents based on RoleBinding relationships
 		case node.Group == rbacv1.GroupName && node.Kind == "RoleBinding":
 			rmap, err = getRoleBindingRelationships(node)
 			if err != nil {
 				klog.V(4).Infof("Failed to get relationships for rolebinding named \"%s\" in namespace \"%s\": %s: %s", node.Name, node.Namespace, err)
 				continue
 			}
-		// Populate dependents based on CSIStorageCapacity relationships
+		// Populate dependencies & dependents based on CSIStorageCapacity relationships
 		case node.Group == storagev1beta1.GroupName && node.Kind == "CSIStorageCapacity":
 			rmap, err = getCSIStorageCapacityRelationships(node)
 			if err != nil {
 				klog.V(4).Infof("Failed to get relationships for csistoragecapacity named \"%s\": %s: %s", node.Name, err)
 				continue
 			}
-		// Populate dependents based on CSINode relationships
+		// Populate dependencies & dependents based on CSINode relationships
 		case node.Group == storagev1.GroupName && node.Kind == "CSINode":
 			rmap, err = getCSINodeRelationships(node)
 			if err != nil {
 				klog.V(4).Infof("Failed to get relationships for csinode named \"%s\": %s: %s", node.Name, err)
 				continue
 			}
-		// Populate dependents based on StorageClass relationships
+		// Populate dependencies & dependents based on StorageClass relationships
 		case node.Group == storagev1.GroupName && node.Kind == "StorageClass":
 			rmap, err = getStorageClassRelationships(node)
 			if err != nil {
 				klog.V(4).Infof("Failed to get relationships for storageclass named \"%s\": %s: %s", node.Name, err)
 				continue
 			}
-		// Populate dependents based on VolumeAttachment relationships
+		// Populate dependencies & dependents based on VolumeAttachment relationships
 		case node.Group == storagev1.GroupName && node.Kind == "VolumeAttachment":
 			rmap, err = getVolumeAttachmentRelationships(node)
 			if err != nil {
@@ -602,8 +640,8 @@ func ResolveDependents(m meta.RESTMapper, objects []unstructuredv1.Unstructured,
 		updateRelationships(node, rmap)
 	}
 
-	// Create submap containing the provided objects & their dependents from the
-	// global map
+	// Create submap containing the provided objects & either their dependencies
+	// or dependents from the global map
 	var depth uint
 	nodeMap, uidQueue, uidSet := NodeMap{}, []types.UID{}, map[types.UID]struct{}{}
 	for _, uid := range uids {
@@ -623,7 +661,7 @@ func ResolveDependents(m meta.RESTMapper, objects []unstructuredv1.Unstructured,
 			continue
 		}
 
-		// Guard against possible cyclic dependency
+		// Guard against possible cycles
 		if _, ok := uidSet[uid]; ok {
 			uidQueue = uidQueue[1:]
 			continue
@@ -638,16 +676,17 @@ func ResolveDependents(m meta.RESTMapper, objects []unstructuredv1.Unstructured,
 			if node.Depth == 0 || depth < node.Depth {
 				node.Depth = depth
 			}
-			dependents, ix := make([]types.UID, len(node.Dependents)), 0
-			for dUID := range node.Dependents {
-				nodeMap[dUID] = globalMapByUID[dUID]
-				dependents[ix] = dUID
+			deps := node.GetDeps(depsIsDependencies)
+			depUIDs, ix := make([]types.UID, len(deps)), 0
+			for depUID := range deps {
+				nodeMap[depUID] = globalMapByUID[depUID]
+				depUIDs[ix] = depUID
 				ix++
 			}
-			uidQueue = append(uidQueue[1:], dependents...)
+			uidQueue = append(uidQueue[1:], depUIDs...)
 		}
 	}
 
-	klog.V(4).Infof("Resolved %d dependents for %d objects", len(nodeMap)-1, len(uids))
+	klog.V(4).Infof("Resolved %d deps for %d objects", len(nodeMap)-1, len(uids))
 	return nodeMap, nil
 }

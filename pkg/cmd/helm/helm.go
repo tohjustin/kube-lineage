@@ -267,7 +267,7 @@ func (o *CmdOptions) Run() error {
 	nodeMap[rootUID] = rootNode
 
 	// Print output
-	return o.Printer.Print(o.Out, nodeMap, rootUID, *o.Flags.Depth)
+	return o.Printer.Print(o.Out, nodeMap, rootUID, *o.Flags.Depth, false)
 }
 
 // getManifestObjects fetches all objects found in the manifest of the provided

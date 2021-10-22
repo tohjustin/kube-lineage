@@ -33,9 +33,9 @@ var (
 
 		# List all dependents of the node named "k3d-dev-server" & the corresponding relationship type(s)
 		%CMD_PATH% node/k3d-dev-server -o wide`)
-	cmdShort = "Display all dependents of a Kubernetes object"
+	cmdShort = "Display all dependencies or dependents of a Kubernetes object"
 	cmdLong  = templates.LongDesc(`
-		Display all dependents of a Kubernetes object.
+		Display all dependencies or dependents of a Kubernetes object.
 
 		TYPE is a Kubernetes resource. Shortcuts and groups will be resolved.
 		NAME is the name of a particular Kubernetes resource.`)
@@ -164,6 +164,7 @@ func (o *CmdOptions) Validate() error {
 	klog.V(4).Infof("RequestType: %v", o.RequestType)
 	klog.V(4).Infof("RequestName: %v", o.RequestName)
 	klog.V(4).Infof("Flags.AllNamespaces: %t", *o.Flags.AllNamespaces)
+	klog.V(4).Infof("Flags.Dependencies: %t", *o.Flags.Dependencies)
 	klog.V(4).Infof("Flags.Depth: %v", *o.Flags.Depth)
 	klog.V(4).Infof("Flags.Scopes: %v", *o.Flags.Scopes)
 	klog.V(4).Infof("ClientFlags.Context: %s", *o.ClientFlags.Context)
@@ -223,14 +224,18 @@ func (o *CmdOptions) Run() error {
 	// to get the root object but unable to list its resource type
 	objs.Items = append(objs.Items, *root)
 
-	// Find all dependents of the root object
+	// Find either all dependencies or dependents of the root object
+	depsIsDependencies, resolveDeps := false, graph.ResolveDependents
+	if o.Flags.Dependencies != nil && *o.Flags.Dependencies {
+		depsIsDependencies, resolveDeps = true, graph.ResolveDependencies
+	}
 	mapper := o.Client.GetMapper()
 	rootUID := root.GetUID()
-	nodeMap, err := graph.ResolveDependents(mapper, objs.Items, []types.UID{rootUID})
+	nodeMap, err := resolveDeps(mapper, objs.Items, []types.UID{rootUID})
 	if err != nil {
 		return err
 	}
 
 	// Print output
-	return o.Printer.Print(o.Out, nodeMap, rootUID, *o.Flags.Depth)
+	return o.Printer.Print(o.Out, nodeMap, rootUID, *o.Flags.Depth, depsIsDependencies)
 }

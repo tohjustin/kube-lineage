@@ -15,11 +15,14 @@ const (
 	flagDepthShorthand         = "d"
 	flagScopes                 = "scopes"
 	flagScopesShorthand        = "S"
+	flagDependencies           = "dependencies"
+	flagDependenciesShorthand  = "D"
 )
 
 // Flags composes common configuration flag structs used in the command.
 type Flags struct {
 	AllNamespaces *bool
+	Dependencies  *bool
 	Depth         *uint
 	Scopes        *[]string
 }
@@ -35,6 +38,9 @@ func (f *Flags) Copy() Flags {
 func (f *Flags) AddFlags(flags *pflag.FlagSet) {
 	if f.AllNamespaces != nil {
 		flags.BoolVarP(f.AllNamespaces, flagAllNamespaces, flagAllNamespacesShorthand, *f.AllNamespaces, "If present, list object relationships across all namespaces")
+	}
+	if f.Dependencies != nil {
+		flags.BoolVarP(f.Dependencies, flagDependencies, flagDependenciesShorthand, *f.Dependencies, "If present, list object dependencies instead of dependents")
 	}
 	if f.Depth != nil {
 		flags.UintVarP(f.Depth, flagDepth, flagDepthShorthand, *f.Depth, "Maximum depth to find relationships")
@@ -58,11 +64,13 @@ func (*Flags) RegisterFlagCompletionFunc(cmd *cobra.Command, f cmdutil.Factory) 
 // with default values set.
 func NewFlags() *Flags {
 	allNamespaces := false
+	dependencies := false
 	depth := uint(0)
 	scopes := []string{}
 
 	return &Flags{
 		AllNamespaces: &allNamespaces,
+		Dependencies:  &dependencies,
 		Depth:         &depth,
 		Scopes:        &scopes,
 	}

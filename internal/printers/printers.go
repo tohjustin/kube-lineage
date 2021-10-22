@@ -27,7 +27,7 @@ func lessGroupKind(lhs, rhs schema.GroupKind) bool {
 }
 
 type Interface interface {
-	Print(w io.Writer, nodeMap graph.NodeMap, rootUID types.UID, maxDepth uint) error
+	Print(w io.Writer, nodeMap graph.NodeMap, rootUID types.UID, maxDepth uint, depsIsDependencies bool) error
 }
 
 type tablePrinter struct {
@@ -39,7 +39,7 @@ type tablePrinter struct {
 	client client.Interface
 }
 
-func (p *tablePrinter) Print(w io.Writer, nodeMap graph.NodeMap, rootUID types.UID, maxDepth uint) error {
+func (p *tablePrinter) Print(w io.Writer, nodeMap graph.NodeMap, rootUID types.UID, maxDepth uint, depsIsDependencies bool) error {
 	root, ok := nodeMap[rootUID]
 	if !ok {
 		return fmt.Errorf("requested object (uid: %s) not found in list of fetched objects", rootUID)
@@ -52,17 +52,17 @@ func (p *tablePrinter) Print(w io.Writer, nodeMap graph.NodeMap, rootUID types.U
 		return p.printTablesByGK(w, nodeMap, maxDepth)
 	}
 
-	return p.printTable(w, nodeMap, root, maxDepth)
+	return p.printTable(w, nodeMap, root, maxDepth, depsIsDependencies)
 }
 
-func (p *tablePrinter) printTable(w io.Writer, nodeMap graph.NodeMap, root *graph.Node, maxDepth uint) error {
+func (p *tablePrinter) printTable(w io.Writer, nodeMap graph.NodeMap, root *graph.Node, maxDepth uint, depsIsDependencies bool) error {
 	// Generate Table to print
 	showGroup := false
 	if sg := p.configFlags.ShowGroup; sg != nil {
 		showGroup = *sg
 	}
 	showGroupFn := createShowGroupFn(nodeMap, showGroup, maxDepth)
-	t, err := nodeMapToTable(nodeMap, root, maxDepth, showGroupFn)
+	t, err := nodeMapToTable(nodeMap, root, maxDepth, depsIsDependencies, showGroupFn)
 	if err != nil {
 		return err
 	}
