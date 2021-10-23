@@ -133,6 +133,13 @@ Flags for configuring output format
 | `--show-label`          | When printing, show all labels as the last column |
 | `--show-namespace`      | When printing, show namespace as the first column |
 
+Use the following commands to view the full list of supported flags
+
+```shell
+$ kube-lineage --help
+$ kube-lineage helm --help
+```
+
 ## Supported Relationships
 
 List of supported relationships used for discovering dependent objects:
