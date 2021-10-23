@@ -5,12 +5,13 @@ metadata:
 spec:
   version: {{ .TagName }}
   homepage: https://github.com/tohjustin/kube-lineage
-  shortDescription: Display all dependent resources
+  shortDescription: Display all dependent resources or resource dependencies
   description: |
-    This plugin prints a table of dependents of the specified resource.
+    This plugin prints a table of dependencies or dependents of the specified
+    resource.
   caveats: |
-    The tool only shows dependencies among the resources you have access to.
-    So for restricted users, the result may be incomplete.
+    The tool only shows dependencies or dependents among the resources you have
+    access to. So for restricted users, the result may be incomplete.
   platforms:
   - selector:
       matchLabels:
