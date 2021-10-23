@@ -29,10 +29,16 @@ var (
 		%CMD_PATH% deployments bar
 
 		# List all dependents of the cronjob named "bar" in namespace "foo"
-		%CMD_PATH% cronjobs.batch/bar -n foo
+		%CMD_PATH% cronjobs.batch/bar --namespace=foo
 
 		# List all dependents of the node named "k3d-dev-server" & the corresponding relationship type(s)
-		%CMD_PATH% node/k3d-dev-server -o wide`)
+		%CMD_PATH% node/k3d-dev-server --output=wide
+
+		# List all dependencies of the pod named "bar-5cc79d4bf5-xgvkc"
+		%CMD_PATH% pod.v1. bar-5cc79d4bf5-xgvkc --dependencies
+
+		# List all dependencies of the serviceaccount named "default" in the current namespace, grouped by resource type
+		%CMD_PATH% sa/default --dependencies --output=split`)
 	cmdShort = "Display all dependencies or dependents of a Kubernetes object"
 	cmdLong  = templates.LongDesc(`
 		Display all dependencies or dependents of a Kubernetes object.

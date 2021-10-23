@@ -36,10 +36,13 @@ var (
 		%CMD_PATH% bar
 
 		# List all resources associated with release named "bar" in namespace "foo"
-		%CMD_PATH% bar -n foo
+		%CMD_PATH% bar --namespace=foo
 
 		# List all resources associated with release named "bar" & the corresponding relationship type(s)
-		%CMD_PATH% bar -o wide`)
+		%CMD_PATH% bar --output=wide
+
+		# List only resources provisioned by the release named "bar"
+		%CMD_PATH% bar --depth=1`)
 	cmdShort = "Display resources associated with a Helm release & their dependents"
 	cmdLong  = templates.LongDesc(`
 		Display resources associated with a Helm release & their dependents.
