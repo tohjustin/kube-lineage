@@ -1,7 +1,7 @@
 SHELL:=/bin/bash
 
 GO_VERSION = "1.16"
-GOLANGCI_LINT_VERSION = "1.41.1"
+GOLANGCI_LINT_VERSION = "1.42.1"
 GORELEASER_VERSION = "0.179.0"
 
 export BUILD_DATE = $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
