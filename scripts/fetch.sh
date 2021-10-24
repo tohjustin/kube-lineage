@@ -10,12 +10,12 @@ fetch() {
   local tool_fetch_cmd=""
   case "$tool" in
     "golangci-lint")
-      ver_cmd="${ROOT}/bin/golangci-lint --version 2>/dev/null | cut -d\" \" -f4"
-      fetch_cmd="curl -sSfL \"https://raw.githubusercontent.com/golangci/golangci-lint/v${ver}/install.sh\" | sh -s -- -b \"${ROOT}/bin\" \"v${ver}\""
+      ver_cmd="${ROOT}/bin/golangci-lint --version 2>/dev/null | cut -d' ' -f4"
+      fetch_cmd="curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/v${ver}/install.sh | sh -s -- -b \"${ROOT}/bin\" \"v${ver}\""
       ;;
     "goreleaser")
       ver_cmd="${ROOT}/bin/goreleaser --version 2>/dev/null | grep 'goreleaser version' | cut -d' ' -f3"
-      fetch_cmd="curl -sSfL https://install.goreleaser.com/github.com/goreleaser/goreleaser.sh | sh -s -- -b \"${ROOT}/bin\" -d \"v${ver}\""
+      fetch_cmd="cat ${ROOT}/scripts/goreleaser_install.sh | sh -s -- -b \"${ROOT}/bin\" -d \"v${ver}\""
       ;;
     *)
       echo "unknown tool $tool"
