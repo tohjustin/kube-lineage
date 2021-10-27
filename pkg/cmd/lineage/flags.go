@@ -60,8 +60,8 @@ func (*Flags) RegisterFlagCompletionFunc(cmd *cobra.Command, f cmdutil.Factory) 
 		}))
 }
 
-// NewConfigFlags returns flags associated with command configuration,
-// with default values set.
+// NewFlags returns flags associated with command configuration, with default
+// values set.
 func NewFlags() *Flags {
 	allNamespaces := false
 	dependencies := false

@@ -124,7 +124,7 @@ func NewCmd(streams genericclioptions.IOStreams, name, parentCmdPath string) *co
 	return cmd
 }
 
-// Complete completes all the required options for command.
+// Complete completes all the required options for the lineage command.
 func (o *CmdOptions) Complete(cmd *cobra.Command, args []string) error {
 	var err error
 
@@ -184,7 +184,7 @@ func (o *CmdOptions) Validate() error {
 	return nil
 }
 
-// Run implements all the necessary functionality for command.
+// Run implements all the necessary functionality for the lineage command.
 func (o *CmdOptions) Run() error {
 	ctx := context.Background()
 
