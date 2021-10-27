@@ -43,7 +43,11 @@ changelog:
   sort: asc
   filters:
     exclude:
+      - "^build:"
       - "^chore:"
+      - "^ci:"
       - "^docs:"
+      - "^perf:"
       - "^refactor:"
+      - "^style:"
       - "^test:"
