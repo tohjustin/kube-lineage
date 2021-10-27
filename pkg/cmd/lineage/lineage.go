@@ -86,7 +86,7 @@ func NewCmd(streams genericclioptions.IOStreams, name, parentCmdPath string) *co
 	}
 	cmd := &cobra.Command{
 		Use:                   strings.ReplaceAll(cmdUse, "%CMD%", cmdName),
-		Example:               strings.ReplaceAll(cmdExample, "%CMD_PATH%", cmdName),
+		Example:               strings.ReplaceAll(cmdExample, "%CMD_PATH%", cmdPath),
 		Short:                 cmdShort,
 		Long:                  cmdLong,
 		Args:                  cobra.MaximumNArgs(2),
