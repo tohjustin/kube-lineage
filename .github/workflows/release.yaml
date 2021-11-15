@@ -67,5 +67,6 @@ jobs:
         run: make release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          KREW_GITHUB_TOKEN: ${{ secrets.KREW_GITHUB_TOKEN }}
       - name: Update new version for plugin "lineage" in krew-index
         uses: rajatjindal/krew-release-bot@v0.0.40

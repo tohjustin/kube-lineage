@@ -36,7 +36,7 @@ archives:
     name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
     wrap_in_directory: false
 checksum:
-  name_template: "checksums.txt"
+  name_template: checksums.txt
 snapshot:
   name_template: "{{ .Tag }}-next"
 changelog:
@@ -51,3 +51,20 @@ changelog:
       - "^refactor(\\(.+\\))?:"
       - "^style(\\(.+\\))?:"
       - "^test(\\(.+\\))?:"
+krews:
+  - name: lineage
+    index:
+      owner: tohjustin
+      name: kubectl-plugins
+      branch: master
+      token: "{{ .Env.KREW_GITHUB_TOKEN }}"
+    url_template: "https://github.com/tohjustin/kube-lineage/releases/download/{{ .Tag }}/{{ .ArtifactName }}"
+    commit_author:
+      name: Justin Toh
+      email: tohjustin@hotmail.com
+    commit_msg_template: "Krew plugin update for {{ .ProjectName }} version {{ .Tag }}"
+    homepage: https://github.com/tohjustin/kube-lineage
+    short_description: Display all dependent resources or resource dependencies
+    description: |
+      This plugin prints a table of dependencies or dependents of the specified
+      resource.
