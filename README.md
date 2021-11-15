@@ -1,7 +1,7 @@
 # kube-lineage
 
 [![build](https://github.com/tohjustin/kube-lineage/actions/workflows/build.yaml/badge.svg)](https://github.com/tohjustin/kube-lineage/actions/workflows/build.yaml)
-[![release](https://aegisbadges.appspot.com/static?subject=release&status=v0.4.1&color=318FE0)](https://github.com/tohjustin/kube-lineage/releases)
+[![release](https://aegisbadges.appspot.com/static?subject=release&status=v0.4.2&color=318FE0)](https://github.com/tohjustin/kube-lineage/releases)
 [![kubernetes compatibility](https://aegisbadges.appspot.com/static?subject=k8s%20compatibility&status=v1.19%2B&color=318FE0)](https://endoflife.date/kubernetes)
 [![helm compatibility](https://aegisbadges.appspot.com/static?subject=helm%20compatibility&status=v3&color=318FE0)](https://helm.sh/docs/topics/v2_v3_migration)
 [![license](https://aegisbadges.appspot.com/static?subject=license&status=Apache-2.0&color=318FE0)](./LICENSE.md)
