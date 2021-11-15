@@ -2,7 +2,7 @@ SHELL:=/bin/bash
 
 GO_VERSION = "1.17"
 GOLANGCI_LINT_VERSION = "1.42.1"
-GORELEASER_VERSION = "0.183.0"
+GORELEASER_VERSION = "1.0.0"
 
 export BUILD_DATE = $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 export GIT_COMMIT = $(shell git rev-parse HEAD)
