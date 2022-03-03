@@ -41,6 +41,9 @@ var (
 		# List all resources associated with release named "bar" & the corresponding relationship type(s)
 		%CMD_PATH% bar --output=wide
 
+		# List all resources associated with release named "bar", excluding event & secret resource types
+		%CMD_PATH% pv/disk --dependencies --exclude-types=ev,secret
+
 		# List only resources provisioned by the release named "bar"
 		%CMD_PATH% bar --depth=1`)
 	cmdShort = "Display resources associated with a Helm release & their dependents"
@@ -169,6 +172,7 @@ func (o *CmdOptions) Validate() error {
 	klog.V(4).Infof("RequestRelease: %v", o.RequestRelease)
 	klog.V(4).Infof("Flags.AllNamespaces: %t", *o.Flags.AllNamespaces)
 	klog.V(4).Infof("Flags.Depth: %v", *o.Flags.Depth)
+	klog.V(4).Infof("Flags.ExcludeTypes: %v", *o.Flags.ExcludeTypes)
 	klog.V(4).Infof("Flags.Scopes: %v", *o.Flags.Scopes)
 	klog.V(4).Infof("ClientFlags.Context: %s", *o.ClientFlags.Context)
 	klog.V(4).Infof("ClientFlags.Namespace: %s", *o.ClientFlags.Namespace)
@@ -182,7 +186,7 @@ func (o *CmdOptions) Validate() error {
 }
 
 // Run implements all the necessary functionality for the helm command.
-//nolint:funlen
+//nolint:funlen,gocognit
 func (o *CmdOptions) Run() error {
 	ctx := context.Background()
 
@@ -213,6 +217,33 @@ func (o *CmdOptions) Run() error {
 		return err
 	}
 
+	// Determine resources to list
+	excludeAPIs := []client.APIResource{}
+	if o.Flags.ExcludeTypes != nil {
+		for _, kind := range *o.Flags.ExcludeTypes {
+			api, err := o.Client.ResolveAPIResource(kind)
+			if err != nil {
+				return err
+			}
+			excludeAPIs = append(excludeAPIs, *api)
+		}
+	}
+
+	// Filter out objects that matches any excluded resource
+	if len(excludeAPIs) > 0 {
+		excludeGKSet := client.ResourcesToGroupKindSet(excludeAPIs)
+		newRlsObjs := []unstructuredv1.Unstructured{}
+		for _, i := range rlsObjs {
+			if _, ok := excludeGKSet[i.GroupVersionKind().GroupKind()]; !ok {
+				newRlsObjs = append(newRlsObjs, i)
+			}
+		}
+		rlsObjs = newRlsObjs
+		if _, ok := excludeGKSet[stgObj.GroupVersionKind().GroupKind()]; ok {
+			stgObj = nil
+		}
+	}
+
 	// Determine the namespaces to list objects
 	var namespaces []string
 	nsSet := map[string]struct{}{o.Namespace: {}}
@@ -229,8 +260,11 @@ func (o *CmdOptions) Run() error {
 		namespaces = append(namespaces, *o.Flags.Scopes...)
 	}
 
-	// Fetch all resources in the cluster
-	objs, err := o.Client.List(ctx, client.ListOptions{Namespaces: namespaces})
+	// Fetch resources in the cluster
+	objs, err := o.Client.List(ctx, client.ListOptions{
+		APIResourcesToExclude: excludeAPIs,
+		Namespaces:            namespaces,
+	})
 	if err != nil {
 		return err
 	}

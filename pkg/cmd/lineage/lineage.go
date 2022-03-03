@@ -34,6 +34,9 @@ var (
 		# List all dependents of the node named "k3d-dev-server" & the corresponding relationship type(s)
 		%CMD_PATH% node/k3d-dev-server --output=wide
 
+		# List all dependents of the persistentvolume named "disk", excluding event & secret resource types
+		%CMD_PATH% pv/disk --dependencies --exclude-types=ev,secret
+
 		# List all dependencies of the pod named "bar-5cc79d4bf5-xgvkc"
 		%CMD_PATH% pod.v1. bar-5cc79d4bf5-xgvkc --dependencies
 
@@ -172,6 +175,7 @@ func (o *CmdOptions) Validate() error {
 	klog.V(4).Infof("Flags.AllNamespaces: %t", *o.Flags.AllNamespaces)
 	klog.V(4).Infof("Flags.Dependencies: %t", *o.Flags.Dependencies)
 	klog.V(4).Infof("Flags.Depth: %v", *o.Flags.Depth)
+	klog.V(4).Infof("Flags.ExcludeTypes: %v", *o.Flags.ExcludeTypes)
 	klog.V(4).Infof("Flags.Scopes: %v", *o.Flags.Scopes)
 	klog.V(4).Infof("ClientFlags.Context: %s", *o.ClientFlags.Context)
 	klog.V(4).Infof("ClientFlags.Namespace: %s", *o.ClientFlags.Namespace)
@@ -185,6 +189,7 @@ func (o *CmdOptions) Validate() error {
 }
 
 // Run implements all the necessary functionality for the lineage command.
+//nolint:funlen
 func (o *CmdOptions) Run() error {
 	ctx := context.Background()
 
@@ -211,6 +216,18 @@ func (o *CmdOptions) Run() error {
 		return err
 	}
 
+	// Determine resources to list
+	excludeAPIs := []client.APIResource{}
+	if o.Flags.ExcludeTypes != nil {
+		for _, kind := range *o.Flags.ExcludeTypes {
+			api, err := o.Client.ResolveAPIResource(kind)
+			if err != nil {
+				return err
+			}
+			excludeAPIs = append(excludeAPIs, *api)
+		}
+	}
+
 	// Determine the namespaces to list objects
 	namespaces := []string{o.Namespace}
 	if o.Flags.AllNamespaces != nil && *o.Flags.AllNamespaces {
@@ -220,8 +237,11 @@ func (o *CmdOptions) Run() error {
 		namespaces = append(namespaces, *o.Flags.Scopes...)
 	}
 
-	// Fetch all resources in the cluster
-	objs, err := o.Client.List(ctx, client.ListOptions{Namespaces: namespaces})
+	// Fetch resources in the cluster
+	objs, err := o.Client.List(ctx, client.ListOptions{
+		APIResourcesToExclude: excludeAPIs,
+		Namespaces:            namespaces,
+	})
 	if err != nil {
 		return err
 	}

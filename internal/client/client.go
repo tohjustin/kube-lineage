@@ -40,8 +40,9 @@ type GetTableOptions struct {
 }
 
 type ListOptions struct {
-	APIResources []APIResource
-	Namespaces   []string
+	APIResourcesToExclude []APIResource
+	APIResourcesToInclude []APIResource
+	Namespaces            []string
 }
 
 type Interface interface {
@@ -218,12 +219,24 @@ func decodeIntoTable(obj runtime.Object) (*metav1.Table, error) {
 func (c *client) List(ctx context.Context, opts ListOptions) (*unstructuredv1.UnstructuredList, error) {
 	klog.V(4).Infof("List with options: %+v", opts)
 	var err error
-	apis := opts.APIResources
+	apis := opts.APIResourcesToInclude
 	if len(apis) == 0 {
 		apis, err = c.GetAPIResources(ctx)
 		if err != nil {
 			return nil, err
 		}
+	}
+
+	// Exclude resources
+	if len(opts.APIResourcesToExclude) > 0 {
+		excludeGKSet := ResourcesToGroupKindSet(opts.APIResourcesToExclude)
+		newAPIs := []APIResource{}
+		for _, api := range apis {
+			if _, ok := excludeGKSet[api.GroupKind()]; !ok {
+				newAPIs = append(newAPIs, api)
+			}
+		}
+		apis = newAPIs
 	}
 
 	// Deduplicate list of namespaces & determine the scope for listing objects

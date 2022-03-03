@@ -10,6 +10,13 @@ import (
 // APIResource represents a Kubernetes API resource.
 type APIResource metav1.APIResource
 
+func (r APIResource) GroupKind() schema.GroupKind {
+	return schema.GroupKind{
+		Group: r.Group,
+		Kind:  r.Kind,
+	}
+}
+
 func (r APIResource) GroupVersionKind() schema.GroupVersionKind {
 	return schema.GroupVersionKind{
 		Group:   r.Group,
@@ -38,6 +45,27 @@ func (r APIResource) WithGroupString() string {
 		return r.Name
 	}
 	return r.Name + "." + r.Group
+}
+
+func ResourcesToGroupKindSet(apis []APIResource) map[schema.GroupKind]struct{} {
+	gkSet := map[schema.GroupKind]struct{}{}
+	for _, api := range apis {
+		gk := api.GroupKind()
+		// Account for resources that migrated API groups (for Kubernetes v1.18 & above)
+		switch {
+		// migrated from "events.v1" to "events.v1.events.k8s.io"
+		case gk.Kind == "Event" && (gk.Group == "" || gk.Group == "events.k8s.io"):
+			gkSet[schema.GroupKind{Kind: gk.Kind, Group: ""}] = struct{}{}
+			gkSet[schema.GroupKind{Kind: gk.Kind, Group: "events.k8s.io"}] = struct{}{}
+		// migrated from "ingresses.v1.extensions" to "ingresses.v1.networking.k8s.io"
+		case gk.Kind == "Ingress" && (gk.Group == "extensions" || gk.Group == "networking.k8s.io"):
+			gkSet[schema.GroupKind{Kind: gk.Kind, Group: "extensions"}] = struct{}{}
+			gkSet[schema.GroupKind{Kind: gk.Kind, Group: "networking.k8s.io"}] = struct{}{}
+		default:
+			gkSet[gk] = struct{}{}
+		}
+	}
+	return gkSet
 }
 
 // ObjectMeta contains the metadata for identifying a Kubernetes object.

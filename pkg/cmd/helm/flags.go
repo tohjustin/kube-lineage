@@ -1,6 +1,8 @@
 package helm
 
 import (
+	"fmt"
+
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	cmdutil "k8s.io/kubectl/pkg/cmd/util"
@@ -11,6 +13,7 @@ import (
 const (
 	flagAllNamespaces          = "all-namespaces"
 	flagAllNamespacesShorthand = "A"
+	flagExcludeTypes           = "exclude-types"
 	flagDepth                  = "depth"
 	flagDepthShorthand         = "d"
 	flagScopes                 = "scopes"
@@ -21,6 +24,7 @@ const (
 type Flags struct {
 	AllNamespaces *bool
 	Depth         *uint
+	ExcludeTypes  *[]string
 	Scopes        *[]string
 }
 
@@ -39,8 +43,13 @@ func (f *Flags) AddFlags(flags *pflag.FlagSet) {
 	if f.Depth != nil {
 		flags.UintVarP(f.Depth, flagDepth, flagDepthShorthand, *f.Depth, "Maximum depth to find relationships")
 	}
+	if f.ExcludeTypes != nil {
+		excludeTypesUsage := fmt.Sprintf("Accepts a comma separated list of resource types to exclude from relationship discovery. You can also use multiple flag options like --%s resource1 --%s resource2...", flagExcludeTypes, flagExcludeTypes)
+		flags.StringSliceVar(f.ExcludeTypes, flagExcludeTypes, *f.ExcludeTypes, excludeTypesUsage)
+	}
 	if f.Scopes != nil {
-		flags.StringSliceVarP(f.Scopes, flagScopes, flagScopesShorthand, *f.Scopes, "Accepts a comma separated list of additional namespaces to find relationships. You can also use multiple flag options like -S namespace1 -S namespace2...")
+		scopesUsage := fmt.Sprintf("Accepts a comma separated list of additional namespaces to find relationships. You can also use multiple flag options like -%s namespace1 -%s namespace2...", flagScopesShorthand, flagScopesShorthand)
+		flags.StringSliceVarP(f.Scopes, flagScopes, flagScopesShorthand, *f.Scopes, scopesUsage)
 	}
 }
 
@@ -59,11 +68,13 @@ func (*Flags) RegisterFlagCompletionFunc(cmd *cobra.Command, f cmdutil.Factory) 
 func NewFlags() *Flags {
 	allNamespaces := false
 	depth := uint(0)
+	excludeTypes := []string{}
 	scopes := []string{}
 
 	return &Flags{
 		AllNamespaces: &allNamespaces,
 		Depth:         &depth,
+		ExcludeTypes:  &excludeTypes,
 		Scopes:        &scopes,
 	}
 }
