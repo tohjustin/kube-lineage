@@ -235,9 +235,13 @@ func (o *CmdOptions) Run() error {
 		return err
 	}
 
-	// Include release objects into objects to handle cases where user has access
-	// to get the release objects but unable to list its resource type
+	// Include release & secret objects into objects to handle cases where user
+	// has access to get them individually but unable to list their respective
+	// resource types
 	objs.Items = append(objs.Items, rlsObjs...)
+	if stgObj != nil {
+		objs.Items = append(objs.Items, *stgObj)
+	}
 
 	// Collect UIDs from release & storage objects
 	var uids []types.UID
