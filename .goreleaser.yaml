@@ -68,3 +68,6 @@ krews:
     description: |
       This plugin prints a table of dependencies or dependents of the specified
       resource.
+    caveats: |
+      The tool only shows dependencies or dependents among the resources you have
+      access to. So for restricted users, the result may be incomplete.
