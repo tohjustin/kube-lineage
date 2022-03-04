@@ -13,9 +13,10 @@ import (
 const (
 	flagAllNamespaces          = "all-namespaces"
 	flagAllNamespacesShorthand = "A"
-	flagExcludeTypes           = "exclude-types"
 	flagDepth                  = "depth"
 	flagDepthShorthand         = "d"
+	flagExcludeTypes           = "exclude-types"
+	flagIncludeTypes           = "include-types"
 	flagScopes                 = "scopes"
 	flagScopesShorthand        = "S"
 )
@@ -25,6 +26,7 @@ type Flags struct {
 	AllNamespaces *bool
 	Depth         *uint
 	ExcludeTypes  *[]string
+	IncludeTypes  *[]string
 	Scopes        *[]string
 }
 
@@ -44,12 +46,16 @@ func (f *Flags) AddFlags(flags *pflag.FlagSet) {
 		flags.UintVarP(f.Depth, flagDepth, flagDepthShorthand, *f.Depth, "Maximum depth to find relationships")
 	}
 	if f.ExcludeTypes != nil {
-		excludeTypesUsage := fmt.Sprintf("Accepts a comma separated list of resource types to exclude from relationship discovery. You can also use multiple flag options like --%s resource1 --%s resource2...", flagExcludeTypes, flagExcludeTypes)
-		flags.StringSliceVar(f.ExcludeTypes, flagExcludeTypes, *f.ExcludeTypes, excludeTypesUsage)
+		usage := fmt.Sprintf("Accepts a comma separated list of resource types to exclude from relationship discovery. You can also use multiple flag options like --%s kind1 --%s kind1...", flagExcludeTypes, flagExcludeTypes)
+		flags.StringSliceVar(f.ExcludeTypes, flagExcludeTypes, *f.ExcludeTypes, usage)
+	}
+	if f.IncludeTypes != nil {
+		usage := fmt.Sprintf("Accepts a comma separated list of resource types to only include in relationship discovery. You can also use multiple flag options like --%s kind1 --%s kind1...", flagIncludeTypes, flagIncludeTypes)
+		flags.StringSliceVar(f.IncludeTypes, flagIncludeTypes, *f.IncludeTypes, usage)
 	}
 	if f.Scopes != nil {
-		scopesUsage := fmt.Sprintf("Accepts a comma separated list of additional namespaces to find relationships. You can also use multiple flag options like -%s namespace1 -%s namespace2...", flagScopesShorthand, flagScopesShorthand)
-		flags.StringSliceVarP(f.Scopes, flagScopes, flagScopesShorthand, *f.Scopes, scopesUsage)
+		usage := fmt.Sprintf("Accepts a comma separated list of additional namespaces to find relationships. You can also use multiple flag options like -%s namespace1 -%s namespace2...", flagScopesShorthand, flagScopesShorthand)
+		flags.StringSliceVarP(f.Scopes, flagScopes, flagScopesShorthand, *f.Scopes, usage)
 	}
 }
 
@@ -69,12 +75,14 @@ func NewFlags() *Flags {
 	allNamespaces := false
 	depth := uint(0)
 	excludeTypes := []string{}
+	includeTypes := []string{}
 	scopes := []string{}
 
 	return &Flags{
 		AllNamespaces: &allNamespaces,
 		Depth:         &depth,
 		ExcludeTypes:  &excludeTypes,
+		IncludeTypes:  &includeTypes,
 		Scopes:        &scopes,
 	}
 }

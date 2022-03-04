@@ -176,6 +176,7 @@ func (o *CmdOptions) Validate() error {
 	klog.V(4).Infof("Flags.Dependencies: %t", *o.Flags.Dependencies)
 	klog.V(4).Infof("Flags.Depth: %v", *o.Flags.Depth)
 	klog.V(4).Infof("Flags.ExcludeTypes: %v", *o.Flags.ExcludeTypes)
+	klog.V(4).Infof("Flags.IncludeTypes: %v", *o.Flags.IncludeTypes)
 	klog.V(4).Infof("Flags.Scopes: %v", *o.Flags.Scopes)
 	klog.V(4).Infof("ClientFlags.Context: %s", *o.ClientFlags.Context)
 	klog.V(4).Infof("ClientFlags.Namespace: %s", *o.ClientFlags.Namespace)
@@ -227,6 +228,16 @@ func (o *CmdOptions) Run() error {
 			excludeAPIs = append(excludeAPIs, *api)
 		}
 	}
+	includeAPIs := []client.APIResource{}
+	if o.Flags.IncludeTypes != nil {
+		for _, kind := range *o.Flags.IncludeTypes {
+			api, err := o.Client.ResolveAPIResource(kind)
+			if err != nil {
+				return err
+			}
+			includeAPIs = append(includeAPIs, *api)
+		}
+	}
 
 	// Determine the namespaces to list objects
 	namespaces := []string{o.Namespace}
@@ -240,6 +251,7 @@ func (o *CmdOptions) Run() error {
 	// Fetch resources in the cluster
 	objs, err := o.Client.List(ctx, client.ListOptions{
 		APIResourcesToExclude: excludeAPIs,
+		APIResourcesToInclude: includeAPIs,
 		Namespaces:            namespaces,
 	})
 	if err != nil {

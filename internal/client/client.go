@@ -218,16 +218,22 @@ func decodeIntoTable(obj runtime.Object) (*metav1.Table, error) {
 //nolint:funlen,gocognit
 func (c *client) List(ctx context.Context, opts ListOptions) (*unstructuredv1.UnstructuredList, error) {
 	klog.V(4).Infof("List with options: %+v", opts)
-	var err error
-	apis := opts.APIResourcesToInclude
-	if len(apis) == 0 {
-		apis, err = c.GetAPIResources(ctx)
-		if err != nil {
-			return nil, err
-		}
+	apis, err := c.GetAPIResources(ctx)
+	if err != nil {
+		return nil, err
 	}
 
-	// Exclude resources
+	// Filter APIs
+	if len(opts.APIResourcesToInclude) > 0 {
+		includeGKSet := ResourcesToGroupKindSet(opts.APIResourcesToInclude)
+		newAPIs := []APIResource{}
+		for _, api := range apis {
+			if _, ok := includeGKSet[api.GroupKind()]; ok {
+				newAPIs = append(newAPIs, api)
+			}
+		}
+		apis = newAPIs
+	}
 	if len(opts.APIResourcesToExclude) > 0 {
 		excludeGKSet := ResourcesToGroupKindSet(opts.APIResourcesToExclude)
 		newAPIs := []APIResource{}

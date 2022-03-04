@@ -173,6 +173,7 @@ func (o *CmdOptions) Validate() error {
 	klog.V(4).Infof("Flags.AllNamespaces: %t", *o.Flags.AllNamespaces)
 	klog.V(4).Infof("Flags.Depth: %v", *o.Flags.Depth)
 	klog.V(4).Infof("Flags.ExcludeTypes: %v", *o.Flags.ExcludeTypes)
+	klog.V(4).Infof("Flags.IncludeTypes: %v", *o.Flags.IncludeTypes)
 	klog.V(4).Infof("Flags.Scopes: %v", *o.Flags.Scopes)
 	klog.V(4).Infof("ClientFlags.Context: %s", *o.ClientFlags.Context)
 	klog.V(4).Infof("ClientFlags.Namespace: %s", *o.ClientFlags.Namespace)
@@ -186,7 +187,7 @@ func (o *CmdOptions) Validate() error {
 }
 
 // Run implements all the necessary functionality for the helm command.
-//nolint:funlen,gocognit
+//nolint:funlen,gocognit,gocyclo
 func (o *CmdOptions) Run() error {
 	ctx := context.Background()
 
@@ -228,8 +229,34 @@ func (o *CmdOptions) Run() error {
 			excludeAPIs = append(excludeAPIs, *api)
 		}
 	}
+	includeAPIs := []client.APIResource{}
+	if o.Flags.IncludeTypes != nil {
+		for _, kind := range *o.Flags.IncludeTypes {
+			api, err := o.Client.ResolveAPIResource(kind)
+			if err != nil {
+				return err
+			}
+			includeAPIs = append(includeAPIs, *api)
+		}
+	}
 
-	// Filter out objects that matches any excluded resource
+	// Keep only objects that matches any included resource type
+	if len(includeAPIs) > 0 {
+		includeGKSet := client.ResourcesToGroupKindSet(includeAPIs)
+		newRlsObjs := []unstructuredv1.Unstructured{}
+		for _, i := range rlsObjs {
+			if _, ok := includeGKSet[i.GroupVersionKind().GroupKind()]; ok {
+				newRlsObjs = append(newRlsObjs, i)
+			}
+		}
+		rlsObjs = newRlsObjs
+		if stgObj != nil {
+			if _, ok := includeGKSet[stgObj.GroupVersionKind().GroupKind()]; !ok {
+				stgObj = nil
+			}
+		}
+	}
+	// Filter out objects that matches any excluded resource type
 	if len(excludeAPIs) > 0 {
 		excludeGKSet := client.ResourcesToGroupKindSet(excludeAPIs)
 		newRlsObjs := []unstructuredv1.Unstructured{}
@@ -239,8 +266,10 @@ func (o *CmdOptions) Run() error {
 			}
 		}
 		rlsObjs = newRlsObjs
-		if _, ok := excludeGKSet[stgObj.GroupVersionKind().GroupKind()]; ok {
-			stgObj = nil
+		if stgObj != nil {
+			if _, ok := excludeGKSet[stgObj.GroupVersionKind().GroupKind()]; ok {
+				stgObj = nil
+			}
 		}
 	}
 
@@ -263,6 +292,7 @@ func (o *CmdOptions) Run() error {
 	// Fetch resources in the cluster
 	objs, err := o.Client.List(ctx, client.ListOptions{
 		APIResourcesToExclude: excludeAPIs,
+		APIResourcesToInclude: includeAPIs,
 		Namespaces:            namespaces,
 	})
 	if err != nil {

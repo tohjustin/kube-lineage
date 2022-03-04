@@ -121,6 +121,7 @@ Flags for configuring relationship discovery parameters
 | `--dependencies`, `-D`   | If present, list object dependencies instead of dependents. <br/> Not supported in `helm` subcommand |
 | `--depth`, `-d`          | Maximum depth to find relationships |
 | `--exclude-types`        | Accepts a comma separated list of resource types to exclude from relationship discovery. <br/> You can also use multiple flag options like --exclude-types type1 --exclude-types type2... |
+| `--include-types`        | Accepts a comma separated list of resource types to only include in relationship discovery. <br/> You can also use multiple flag options like --include-types type1 --include-types type2... |
 | `--scopes`, `-S`         | Accepts a comma separated list of additional namespaces to find relationships. <br/> You can also use multiple flag options like -S namespace1 -S namespace2... |
 
 Flags for configuring output format
