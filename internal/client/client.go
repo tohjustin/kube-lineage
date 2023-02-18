@@ -215,6 +215,7 @@ func decodeIntoTable(obj runtime.Object) (*metav1.Table, error) {
 
 // List returns a list of objects that matches the provided options on the
 // server.
+//
 //nolint:funlen,gocognit
 func (c *client) List(ctx context.Context, opts ListOptions) (*unstructuredv1.UnstructuredList, error) {
 	klog.V(4).Infof("List with options: %+v", opts)
@@ -325,7 +326,11 @@ func (c *client) List(ctx context.Context, opts ListOptions) (*unstructuredv1.Un
 func (c *client) GetAPIResources(_ context.Context) ([]APIResource, error) {
 	rls, err := c.discoveryClient.ServerPreferredResources()
 	if err != nil {
-		return nil, err
+		if discovery.IsGroupDiscoveryFailedError(err) {
+			klog.V(3).Info("Ignoring invalid resources")
+		} else {
+			return nil, err
+		}
 	}
 
 	apis := []APIResource{}
