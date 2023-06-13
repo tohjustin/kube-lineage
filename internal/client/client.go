@@ -24,7 +24,7 @@ import (
 )
 
 const (
-	clientQPS   = 200
+	clientQPS   = 300
 	clientBurst = 400
 )
 
