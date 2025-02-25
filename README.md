@@ -165,18 +165,18 @@ List of supported relationships used for discovering dependent objects:
 ### Install via [krew](https://krew.sigs.k8s.io/)
 
 ```shell
-$ kubectl krew install lineage
+kubectl krew install lineage
 
-$ kubectl lineage --version
+kubectl lineage --version
 ```
 
 ### Install from Source
 
 ```shell
-$ git clone git@github.com:tohjustin/kube-lineage.git && cd kube-lineage
-$ make install
+git clone git@github.com:tohjustin/kube-lineage.git && cd kube-lineage
+make install
 
-$ kube-lineage --version
+kube-lineage --version
 ```
 
 ## Prior Art
