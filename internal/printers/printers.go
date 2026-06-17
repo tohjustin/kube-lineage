@@ -11,7 +11,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
-
 	"github.com/tohjustin/kube-lineage/internal/client"
 	"github.com/tohjustin/kube-lineage/internal/graph"
 )

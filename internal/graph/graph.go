@@ -11,7 +11,6 @@ import (
 	networkingv1 "k8s.io/api/networking/v1"
 	nodev1 "k8s.io/api/node/v1"
 	policyv1 "k8s.io/api/policy/v1"
-	policyv1beta1 "k8s.io/api/policy/v1beta1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	storagev1beta1 "k8s.io/api/storage/v1beta1"
@@ -506,13 +505,6 @@ func resolveDeps(m meta.RESTMapper, objects []unstructuredv1.Unstructured, uids 
 			rmap, err = getServiceAccountRelationships(node)
 			if err != nil {
 				klog.V(4).Infof("Failed to get relationships for serviceaccount named \"%s\" in namespace \"%s\": %s", node.Name, node.Namespace, err)
-				continue
-			}
-		// Populate dependencies & dependents based on PodSecurityPolicy relationships
-		case node.Group == policyv1beta1.GroupName && node.Kind == "PodSecurityPolicy":
-			rmap, err = getPodSecurityPolicyRelationships(node)
-			if err != nil {
-				klog.V(4).Infof("Failed to get relationships for podsecuritypolicy named \"%s\": %s", node.Name, err)
 				continue
 			}
 		// Populate dependencies & dependents based on PodDisruptionBudget relationships

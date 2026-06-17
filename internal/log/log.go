@@ -4,7 +4,7 @@ import (
 	goflag "flag"
 
 	"github.com/spf13/pflag"
-	"k8s.io/klog/v2"
+	klog "k8s.io/klog/v2"
 )
 
 // AddFlags adds flags for logging.

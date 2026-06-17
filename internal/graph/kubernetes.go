@@ -725,41 +725,6 @@ func getPodDisruptionBudgetRelationships(n *Node) (*RelationshipMap, error) {
 	return &result, nil
 }
 
-// getPodSecurityPolicyRelationships returns a map of relationships that this
-// PodSecurityPolicy has with other objects, based on what was referenced in its
-// manifest.
-func getPodSecurityPolicyRelationships(n *Node) (*RelationshipMap, error) {
-	var psp policyv1beta1.PodSecurityPolicy
-	err := runtime.DefaultUnstructuredConverter.FromUnstructured(n.UnstructuredContent(), &psp)
-	if err != nil {
-		return nil, err
-	}
-
-	var ref ObjectReference
-	result := newRelationshipMap()
-
-	// RelationshipPodSecurityPolicyAllowedCSIDriver
-	for _, csi := range psp.Spec.AllowedCSIDrivers {
-		ref = ObjectReference{Group: storagev1.GroupName, Kind: "CSIDriver", Name: csi.Name}
-		result.AddDependencyByKey(ref.Key(), RelationshipPodSecurityPolicyAllowedCSIDriver)
-	}
-	if rc := psp.Spec.RuntimeClass; rc != nil {
-		// RelationshipPodSecurityPolicyAllowedRuntimeClass
-		for _, n := range psp.Spec.RuntimeClass.AllowedRuntimeClassNames {
-			ref = ObjectReference{Group: nodev1.GroupName, Kind: "RuntimeClass", Name: n}
-			result.AddDependencyByKey(ref.Key(), RelationshipPodSecurityPolicyAllowedRuntimeClass)
-		}
-
-		// RelationshipPodSecurityPolicyDefaultRuntimeClass
-		if n := psp.Spec.RuntimeClass.DefaultRuntimeClassName; n != nil {
-			ref = ObjectReference{Group: nodev1.GroupName, Kind: "RuntimeClass", Name: *n}
-			result.AddDependencyByKey(ref.Key(), RelationshipPodSecurityPolicyDefaultRuntimeClass)
-		}
-	}
-
-	return &result, nil
-}
-
 // getRoleRelationships returns a map of relationships that this Role has with
 // other objects, based on what was referenced in its manifest.
 func getRoleRelationships(n *Node) (*RelationshipMap, error) {

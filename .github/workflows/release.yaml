@@ -5,51 +5,21 @@ name: release
 on:
   push:
     tags:
-    - 'v*.*.*'
+      - "v*" # Trigger on tags that start with 'v', e.g., v1.0.0
+  release:
+    types: [created] # Trigger when a GitHub Release is created
+  workflow_dispatch: # Allow manual triggering
 env:
-  GO_VERSION: "1.17"
+  GO_VERSION: "1.22.4"
 jobs:
-  lint:
-    name: Run linter
-    runs-on: ubuntu-18.04
-    steps:
-      - name: Setup Go
-        uses: actions/setup-go@v2
-        with:
-          go-version: ${{ env.GO_VERSION }}
-      - name: Checkout code
-        uses: actions/checkout@v2
-      - uses: actions/cache@v2
-        with:
-          path: ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
-      - name: Run linter
-        run: make lint
-  test:
-    name: Run tests
-    runs-on: ubuntu-18.04
-    steps:
-      - name: Setup Go
-        uses: actions/setup-go@v2
-        with:
-          go-version: ${{ env.GO_VERSION }}
-      - name: Checkout code
-        uses: actions/checkout@v2
-      - uses: actions/cache@v2
-        with:
-          path: ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
-      - name: Run tests
-        run: make test
   release:
     name: Release
-    runs-on: ubuntu-18.04
     permissions:
       contents: write
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Setup Go
         uses: actions/setup-go@v2
@@ -57,16 +27,30 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
       - name: Checkout code
         uses: actions/checkout@v2
-      - uses: actions/cache@v2
+      - uses: actions/cache@v4
         with:
           path: ~/go/pkg/mod
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-
-      - name: Release
-        run: make release
+      - name: Build binary (Unix)
+        if: matrix.os == 'ubuntu-latest'
+        run: CGO_ENABLED=0 GOOS=linux go build -a -tags netgo -ldflags '-w -extldflags "-static"' -o kube-lineage-${{ matrix.os }}-${{ github.ref_name }} ./cmd/kube-lineage
+
+      - name: Build binary (Arm)
+        if: matrix.os == 'macos-latest'
+        run: CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -a -tags netgo -ldflags '-w -extldflags "-static"' -o kube-lineage-${{ matrix.os }}-${{ github.ref_name }} ./cmd/kube-lineage
+
+      - name: Build binary (Windows)
+        if: matrix.os == 'windows-latest'
+        run: CGO_ENABLED=0 GOOS=windows go build -a -tags netgo -ldflags '-w -extldflags "-static"' -o kube-lineage.exe ./cmd/kube-lineage
+
+      - name: Upload Release Asset
+        uses: actions/upload-release-asset@v1.0.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          KREW_GITHUB_TOKEN: ${{ secrets.KREW_GITHUB_TOKEN }}
-      - name: Update new version for plugin "lineage" in krew-index
-        uses: rajatjindal/krew-release-bot@v0.0.40
+        with:
+          upload_url: ${{ github.event.release.upload_url }} 
+          asset_path: ./kube-lineage-${{ matrix.os }}-${{ github.ref_name }}
+          asset_name: kube-lineage-${{ matrix.os }}-${{ github.ref_name }}
+          asset_content_type: application/octet-stream

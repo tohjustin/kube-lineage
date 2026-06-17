@@ -18,9 +18,8 @@ import (
 	"k8s.io/cli-runtime/pkg/resource"
 	"k8s.io/klog/v2"
 	cmdutil "k8s.io/kubectl/pkg/cmd/util"
-	"k8s.io/kubectl/pkg/util"
 	"k8s.io/kubectl/pkg/util/templates"
-
+	"k8s.io/kubectl/pkg/util/completion"
 	"github.com/tohjustin/kube-lineage/internal/client"
 	"github.com/tohjustin/kube-lineage/internal/graph"
 	"github.com/tohjustin/kube-lineage/internal/log"
@@ -81,7 +80,7 @@ func NewCmd(streams genericclioptions.IOStreams, name, parentCmdPath string) *co
 	}
 
 	f := cmdutil.NewFactory(o.ClientFlags)
-	util.SetFactoryForCompletion(f)
+	completion.SetFactoryForCompletion(f)
 
 	if len(name) > 0 {
 		cmdName = name
